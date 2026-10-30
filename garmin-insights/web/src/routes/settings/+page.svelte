@@ -3,6 +3,7 @@
   import { getLocale, setLocale } from "$lib/paraglide/runtime.js";
   import { api, ApiError, unwrap } from "$lib/api.ts";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
+  import McpSetup from "$lib/components/McpSetup.svelte";
   import { dateLabel, duration, num, parseDuration } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { session } from "$lib/session.svelte.ts";
@@ -103,6 +104,7 @@
   <p>{m.key_status_label()}: <strong class:good={key?.status === "ok"} class:danger={key?.configured && key.status !== "ok"}>{statusText}</strong>
     {#if key?.expiresOn}<span class="muted"> · {m.key_expires({ date: dateLabel(key.expiresOn) })}</span>{/if}</p>
   <p class="muted small">{m.key_help()}</p>
+  <p class="small"><a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer">{m.key_link()}</a></p>
   <form class="stack" onsubmit={saveKey}>
     <div class="field"><label for="key">{m.key_input()}</label><input id="key" type="password" autocomplete="off" spellcheck="false" bind:value={apiKey} required /></div>
     <div class="field"><label for="exp">{m.key_expires_input()}</label><input id="exp" type="date" bind:value={expiresOn} /></div>
@@ -155,6 +157,8 @@
     </table></div>
   {/if}
 </section>
+
+<McpSetup />
 
 <section class="card stack">
   <h2>{m.settings_language()}</h2>

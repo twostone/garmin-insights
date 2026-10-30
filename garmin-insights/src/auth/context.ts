@@ -11,6 +11,8 @@ export type AppContext = {
   /** External mode only: public HA URL (OAuth authorization server) and this app's OAuth client id. */
   haUrl: string | null;
   clientId: string | null;
+  /** Public MCP endpoint, null while the external listener is not enabled. Shown in both modes (set-up happens in Ingress). */
+  mcpUrl: string | null;
 };
 
 // HA ingress serves the app under /api/hassio_ingress/<token>/. Anything else is not trusted as a <base href>.
@@ -21,12 +23,12 @@ export function ingressBasePath(header: string | undefined): string {
   return path && INGRESS_PATH.test(path) ? `${path}/` : "/";
 }
 
-export function ingressContext(header: string | undefined): AppContext {
-  return { mode: "ingress", basePath: ingressBasePath(header), haUrl: null, clientId: null };
+export function ingressContext(header: string | undefined, mcpUrl: string | null = null): AppContext {
+  return { mode: "ingress", basePath: ingressBasePath(header), haUrl: null, clientId: null, mcpUrl };
 }
 
 export function externalContext(haUrl: string, appUrl: string): AppContext {
-  return { mode: "external", basePath: "/", haUrl, clientId: `${appUrl}/` };
+  return { mode: "external", basePath: "/", haUrl, clientId: `${appUrl}/`, mcpUrl: `${appUrl}/mcp` };
 }
 
 const escapeJson = (value: unknown) =>

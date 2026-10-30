@@ -60,6 +60,12 @@ test("ingress: api needs a user, static files and context do not", async () => {
   assert.equal((await app.request("/app.js", {}, from(INGRESS_IP))).status, 200);
 });
 
+test("ingress: the context carries the MCP address only when the external listener is enabled", async () => {
+  const withUrl = createIngressApp({ allowedIp: INGRESS_IP, mcpUrl: "https://app.example.test/mcp", api: testApi().api, staticRoot: staticRoot() });
+  assert.equal((await (await withUrl.request("/api/context", {}, from(INGRESS_IP))).json()).mcpUrl, "https://app.example.test/mcp");
+  assert.equal((await (await ingress().request("/api/context", {}, from(INGRESS_IP))).json()).mcpUrl, null);
+});
+
 test("ingress: PWA files are refused, so no service worker can register under ingress", async () => {
   const app = ingress();
   for (const path of ["/sw.js", "/manifest.webmanifest", "/workbox-abc.js"]) {

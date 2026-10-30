@@ -160,6 +160,7 @@
   "settings_key": "Garmin key",
   "settings_sync": "Synchronisation",
   "settings_athlete": "Zones and thresholds",
+  "settings_mcp": "MCP server",
   "settings_language": "Language",
   "settings_data": "Data and account",
   "key_status_label": "Status",
@@ -169,6 +170,7 @@
   "key_status_invalid": "rejected by Garmin",
   "key_expires": "expires {date}",
   "key_help": "Create the key in Garmin Connect under Settings, Personal API. It is checked immediately, stored encrypted and never shown again.",
+  "key_link": "Open Garmin Connect: Personal API key",
   "key_input": "Personal API key",
   "key_expires_input": "Expiry date of the key (optional, for the reminder)",
   "key_save": "Check and save",
@@ -227,5 +229,14 @@
   "tss_power": "from power",
   "tss_run_pace": "from pace",
   "tss_hr": "from heart rate",
-  "tss_hr_estimated": "from heart rate, thresholds estimated"
+  "tss_hr_estimated": "from heart rate, thresholds estimated",
+  "mcp_help": "The MCP server lets any AI assistant or MCP client analyse your training and health data in detail. It only ever sees your own data and signs in through Home Assistant (OAuth).",
+  "mcp_url": "MCP server address",
+  "mcp_generic": "Any other MCP client: add a remote server with this address, transport Streamable HTTP, and sign in with Home Assistant when the client opens the login.",
+  "mcp_copy": "Copy",
+  "mcp_copied": "Copied",
+  "mcp_claude_ai": "Example claude.ai: Settings → Connectors → Add custom connector, paste the address.",
+  "mcp_claude_code": "Example Claude Code: run this command, then type /mcp and sign in.",
+  "mcp_tools": "Available: {tools}. All read-only except trigger_sync, which starts a sync.",
+  "mcp_unavailable": "The MCP server needs the app options ha_external_url and app_external_url, plus a reverse proxy with HTTPS in front of port 8100. Set them in the app configuration and restart."
 }

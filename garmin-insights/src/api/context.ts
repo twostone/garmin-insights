@@ -7,6 +7,7 @@ const contextSchema = z.object({
   basePath: z.string(),
   haUrl: z.string().nullable(),
   clientId: z.string().nullable(),
+  mcpUrl: z.string().nullable(),
   version: z.string().nullable(),
 });
 
