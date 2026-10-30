@@ -36,6 +36,7 @@ garmin-insights/         die App (Docker-Build-Kontext); Ordnername ≠ Slug (`g
     ha/notify.ts         Benachrichtigungen über den Supervisor
     db.ts, crypto.ts, options.ts, log.ts
   web/                   Frontend: SvelteKit 2 (Svelte 5) als SPA, Hash-Router, Paraglide (messages/{de,en}.json)
+  scripts/seed-demo.ts   Demo-Daten für die Oberfläche (kein Garmin-Konto nötig)
   test/                  Tests (node:test)
 ```
 
@@ -50,6 +51,7 @@ npm run build                  # Frontend nach dist/ (wird von den Listenern aus
 npm run garmin:types           # schema.d.ts neu aus docs/garmin-personal-api.openapi.json erzeugen
 DATA_DIR=./data INGRESS_ONLY_IP= npm start   # lokal; mit HA_EXTERNAL_URL + APP_EXTERNAL_URL auch der externe Listener
 npm run dev:web                # Vite-Dev-Server, /api geht per Proxy an :8099
+npm run seed:demo              # synthetische Demo-Daten (DATA_DIR=./data/demo); dann mit DEV_USER_ID=demo INGRESS_ONLY_IP= starten
 ```
 
 Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (genau das prüft die CI).
@@ -65,6 +67,8 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
   `sha256(token)`, ≤ 60 s und ≤ `exp`). **Jedes gültige HA-Token wird akzeptiert** (auch Long-Lived), die Audience wird nicht
   geprüft, weil HA-Tokens keine haben (dokumentiert in DOCS.md). System-User (ohne Credentials) werden abgelehnt. HA nicht
   erreichbar = 5xx, nie anonym.
+- **Entwicklung ohne Ingress**: Ist `INGRESS_ONLY_IP` leer (Guard aus), nimmt der Ingress-Listener bei fehlendem
+  `X-Remote-User-Id` den User aus `DEV_USER_ID`. Mit gesetztem Guard wirkt die Variable nie. Nie in der Produktion setzen.
 - **Frontend**: SPA mit **Hash-Router** (`router.type: "hash"`), weil der Ingress-Pfad `/api/hassio_ingress/<token>/` wechselt.
   Hono macht SvelteKits root-absolute URLs relativ und injiziert `<base href>` und den Kontext als JSON-Script-Tag
   (`auth/context.ts`), damit die CSP ohne `unsafe-inline` auskommt (Inline-Start-Skripte per Hash). Service Worker und

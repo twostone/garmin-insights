@@ -47,7 +47,7 @@ setInterval(() => void services.keys.checkExpiry(), EXPIRY_CHECK_MS).unref();
 const staticRoot = resolve(process.env.STATIC_DIR ?? "./dist");
 
 const ingressPort = Number(process.env.PORT ?? 8099);
-serve({ fetch: createIngressApp({ allowedIp: process.env.INGRESS_ONLY_IP, api, staticRoot }).fetch, port: ingressPort }, (i) =>
+serve({ fetch: createIngressApp({ allowedIp: process.env.INGRESS_ONLY_IP, api, staticRoot, devUserId: process.env.DEV_USER_ID }).fetch, port: ingressPort }, (i) =>
   log.info("ingress_listening", { port: i.port }),
 );
 

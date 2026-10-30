@@ -59,6 +59,12 @@ class Session {
     this.tokens = null;
     clearRefreshToken();
     this.status = "anonymous";
+    // The offline copies hold this user's data: gone with the sign-out.
+    try {
+      await Promise.all(["gi-api", "gi-pages"].map((name) => caches.delete(name)));
+    } catch {
+      // no Cache API: nothing to clear
+    }
     if (cfg && token) await revoke(cfg, token);
   }
 

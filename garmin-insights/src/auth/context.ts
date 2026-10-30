@@ -72,6 +72,9 @@ export function contentSecurityPolicy(ctx: AppContext, scriptHashes: string[]): 
     `connect-src ${connect}`,
     `img-src 'self' data: blob: ${TILES}`,
     "style-src 'self'",
+    // ECharts tooltips and MapLibre controls write style attributes into their own markup. Attributes only: stylesheets
+    // and <style> elements stay restricted to 'self', scripts are untouched.
+    "style-src-attr 'unsafe-inline'",
     "font-src 'self'",
     "worker-src 'self' blob:",
     "child-src blob:",

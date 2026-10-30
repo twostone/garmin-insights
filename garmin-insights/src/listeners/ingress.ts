@@ -18,6 +18,8 @@ export type IngressOptions = {
   allowedIp: string | undefined;
   api: Hono<Env>;
   staticRoot: string;
+  /** Development only: user for requests without X-Remote-User-Id. Honoured only while the IP guard is off. */
+  devUserId?: string;
 };
 
 // Port 8099, the `ingress_port`. Not published by the app: only Home Assistant's ingress proxy reaches it, and the
@@ -25,6 +27,8 @@ export type IngressOptions = {
 export function createIngressApp(opts: IngressOptions) {
   const app = new Hono<Env>();
   app.use("*", requestLog("ingress"));
+  // Without the guard (dev, tests) a missing header may fall back to a fixed user; with the guard it never does.
+  const devUser = !opts.allowedIp && opts.devUserId ? { id: opts.devUserId, name: null } : null;
 
   if (opts.allowedIp) {
     const allowed = opts.allowedIp;
@@ -47,7 +51,7 @@ export function createIngressApp(opts: IngressOptions) {
     c.set("appContext", ingressContext(c.req.header(INGRESS_PATH)));
     const id = c.req.header(USER_ID);
     // The display name is what people recognise; the login name is the fallback. Never logged.
-    c.set("user", id ? { id, name: c.req.header(USER_DISPLAY_NAME) || c.req.header(USER_NAME) || null } : null);
+    c.set("user", id ? { id, name: c.req.header(USER_DISPLAY_NAME) || c.req.header(USER_NAME) || null } : devUser);
     await next();
   });
 

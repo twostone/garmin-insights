@@ -33,7 +33,8 @@ test("external: context injection with mode external, HA url, client id and mani
   assert.match(html, /<base href="\/">/);
   const csp = res.headers.get("content-security-policy") ?? "";
   assert.match(csp, new RegExp(`connect-src 'self' https://tiles.openfreemap.org ${HA}`));
-  assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
+  assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline|unsafe-eval/);
+  assert.match(csp, /style-src-attr 'unsafe-inline'/);
 });
 
 test("external: forged ingress headers do not authenticate and do not change the base path", async () => {

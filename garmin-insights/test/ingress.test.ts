@@ -42,7 +42,7 @@ test("ingress: context injection with a validated base path, mode ingress, no ma
   assert.match(html, /"mode":"ingress"/);
   assert.doesNotMatch(html, /manifest/);
   assert.match(res.headers.get("content-security-policy") ?? "", /script-src 'self' 'sha256-/);
-  assert.doesNotMatch(res.headers.get("content-security-policy") ?? "", /unsafe-inline/);
+  assert.doesNotMatch(res.headers.get("content-security-policy") ?? "", /script-src[^;]*unsafe-inline/);
 });
 
 test("ingress: a malicious X-Ingress-Path falls back to /", async () => {
@@ -76,4 +76,11 @@ test("ingress: root-absolute asset URLs of the SPA fallback are made relative (t
   assert.match(html, /href="\.\/favicon\.svg"/);
   assert.match(html, /import\("\.\/_app\/x\.js"\)/);
   assert.doesNotMatch(html.replace(/<base [^>]*>/, ""), /(href|src)="\//);
+});
+
+test("ingress: DEV_USER_ID applies only while the guard is off", async () => {
+  const dev = (allowedIp?: string) => createIngressApp({ allowedIp, devUserId: "dev", api: testApi().api, staticRoot: staticRoot() });
+  assert.deepEqual(await (await dev().request("/api/me")).json(), { user: { id: "dev", name: null } });
+  const guarded = await dev(INGRESS_IP).request("/api/me", {}, from(INGRESS_IP));
+  assert.deepEqual(await guarded.json(), { user: null }, "with the guard on, no header means no user");
 });

@@ -12,7 +12,8 @@
     "check": "paraglide-js compile --project ./project.inlang --outdir ./web/src/lib/paraglide --emit-ts-declarations && svelte-kit sync && svelte-check --workspace web --tsconfig ./tsconfig.json",
     "build": "vite build",
     "dev:web": "vite dev",
-    "garmin:types": "npx --yes openapi-typescript@7 ../docs/garmin-personal-api.openapi.json -o src/garmin/schema.d.ts"
+    "garmin:types": "npx --yes openapi-typescript@7 ../docs/garmin-personal-api.openapi.json -o src/garmin/schema.d.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts"
   },
   "license": "Apache-2.0",
   "dependencies": {
