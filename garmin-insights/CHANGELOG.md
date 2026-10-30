@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/twostone/garmin-insights/compare/v0.1.1...v0.2.0) (2026-10-30)
+
+
+### Neu
+
+* **web:** MCP-Einrichtung und Garmin-Key-Link in den Einstellungen ([#6](https://github.com/twostone/garmin-insights/issues/6)) ([0ae2e08](https://github.com/twostone/garmin-insights/commit/0ae2e08e79f6e08445a4a6513c25f2e86e4eb5ed))
+
 ## [0.1.1](https://github.com/twostone/garmin-insights/compare/v0.1.0...v0.1.1) (2026-10-30)
 
 
