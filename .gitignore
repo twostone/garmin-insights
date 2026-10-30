@@ -1,0 +1,7 @@
+node_modules
+dist
+data
+.DS_Store
+.svelte-kit
+garmin-insights/web/src/lib/paraglide
+garmin-insights/screenshots/

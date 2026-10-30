@@ -1,0 +1,48 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "packageRules": [
+    {
+      "description": "Alle npm-Updates ohne Major in einem PR",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch", "lockFileMaintenance"],
+      "groupName": "npm-Abhängigkeiten"
+    },
+    {
+      "description": "Alle GitHub-Actions-Updates in einem PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Node-Basisimage im Dockerfile",
+      "matchManagers": ["dockerfile"],
+      "groupName": "Docker-Basisimages"
+    },
+    {
+      "description": "Node.js in einem PR: Docker-Basisimage, Version in der CI und @types/node (steht nach den Gruppen oben, damit diese Gruppe gewinnt)",
+      "matchPackageNames": ["node", "@types/node", "actions/node-versions"],
+      "matchManagers": ["dockerfile", "github-actions", "npm"],
+      "groupName": "Node.js"
+    },
+    {
+      "description": "svelte-check unterstützt TypeScript 7 noch nicht (siehe AGENTS.md)",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
+      "description": "MCP-SDK v2 ist exakt gepinnt (siehe AGENTS.md): Updates einzeln und bewusst",
+      "matchPackageNames": ["@modelcontextprotocol/server", "@modelcontextprotocol/client"],
+      "groupName": "MCP-SDK",
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "SvelteKit 3 braucht @vite-pwa/sveltekit mit Kit-3-Support (heute nur Kit 2) und adapter-static 4",
+      "matchPackageNames": ["@sveltejs/kit", "@sveltejs/adapter-static"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
