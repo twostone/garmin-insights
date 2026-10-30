@@ -1,0 +1,50 @@
+{
+  "name": "garmin-insights",
+  "version": "0.0.0",
+  "description": "Garmin Connect Personal API mirror with dashboards, REST API and MCP server for Home Assistant",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "paraglide-js compile --project ./project.inlang --outdir ./web/src/lib/paraglide --emit-ts-declarations && svelte-kit sync && svelte-check --workspace web --tsconfig ./tsconfig.json",
+    "build": "vite build",
+    "dev:web": "vite dev",
+    "garmin:types": "npx --yes openapi-typescript@7 ../docs/garmin-personal-api.openapi.json -o src/garmin/schema.d.ts"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@garmin/fitsdk": "^21.218.0",
+    "@hono/node-server": "^2.1.5",
+    "@hono/zod-openapi": "^1.6.3",
+    "@modelcontextprotocol/hono": "2.0.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "fflate": "^0.8.3",
+    "hono": "^4.13.14",
+    "openapi-fetch": "^0.17.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@inlang/paraglide-js": "^2.29.3",
+    "@inlang/plugin-message-format": "^4.5.6",
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.70.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "^24.19.2",
+    "@types/ws": "^8.18.2",
+    "@vite-pwa/sveltekit": "^1.1.0",
+    "echarts": "^6.1.0",
+    "maplibre-gl": "^6.16.0",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.5",
+    "workbox-build": "^7.4.1",
+    "workbox-window": "^7.4.1",
+    "ws": "^8.22.0"
+  }
+}

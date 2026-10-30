@@ -1,0 +1,17 @@
+configuration:
+  log_level:
+    name: Protokollstufe
+    description: Wie viel die App in ihr Protokoll schreibt.
+  ha_external_url:
+    name: Öffentliche Home-Assistant-URL
+    description: >-
+      Öffentliche HTTPS-URL von Home Assistant (z. B. https://ha.example.com). Wird für den externen Zugang gebraucht:
+      PWA und MCP-Clients melden sich dort an. Leer lassen, dann ist der externe Zugang aus.
+  app_external_url:
+    name: Öffentliche URL dieser App (Port 8100)
+    description: >-
+      Öffentliche HTTPS-URL, unter der der Reverse-Proxy Port 8100 erreichbar macht (z. B. https://garmin.example.com).
+      Dient als OAuth-Client-ID und Weiterleitungsziel. Leer lassen, dann ist der externe Zugang aus.
+  sync_interval_minutes:
+    name: Sync-Intervall (Minuten)
+    description: Wie oft die App neue Daten bei Garmin abholt. Ein Sync läuft auch beim Öffnen der App und auf Knopfdruck.

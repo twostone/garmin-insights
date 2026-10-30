@@ -1,0 +1,4 @@
+# https://developers.home-assistant.io/docs/apps/repository#repository-configuration
+name: garmin-insights
+url: "https://github.com/twostone/garmin-insights"
+maintainer: Niklas Walter

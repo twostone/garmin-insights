@@ -1,0 +1,12 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "app_name": "Garmin Insights",
+  "nav_dashboard": "Übersicht",
+  "nav_activities": "Aktivitäten",
+  "nav_trends": "Trends",
+  "nav_health": "Gesundheit",
+  "nav_settings": "Einstellungen",
+  "loading": "Lade…",
+  "error_generic": "Etwas ist schiefgelaufen.",
+  "retry": "Erneut versuchen"
+}

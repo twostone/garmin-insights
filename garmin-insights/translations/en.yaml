@@ -1,0 +1,17 @@
+configuration:
+  log_level:
+    name: Log level
+    description: How much the app writes to its log.
+  ha_external_url:
+    name: Public Home Assistant URL
+    description: >-
+      Public HTTPS URL of Home Assistant (for example https://ha.example.com). Needed for the external listener:
+      the PWA and MCP clients sign in there. Leave empty to disable the external listener.
+  app_external_url:
+    name: Public URL of this app (port 8100)
+    description: >-
+      Public HTTPS URL under which the reverse proxy exposes port 8100 (for example https://garmin.example.com).
+      Used as OAuth client id and redirect target. Leave empty to disable the external listener.
+  sync_interval_minutes:
+    name: Sync interval (minutes)
+    description: How often the app pulls new data from Garmin. A sync also runs when the app is opened and on demand.
