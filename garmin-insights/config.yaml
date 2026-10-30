@@ -1,7 +1,7 @@
 # https://developers.home-assistant.io/docs/apps/configuration
 name: Garmin Insights
 # Managed by Release Please (see release-please-config.json): do not edit the version by hand.
-version: "0.1.1" # x-release-please-version
+version: "0.2.0" # x-release-please-version
 slug: garmin_insights
 description: Garmin-Daten lokal spiegeln, auswerten und per PWA, REST-API und MCP nutzen
 url: "https://github.com/twostone/garmin-insights"
