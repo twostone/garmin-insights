@@ -65,3 +65,19 @@ export async function mockHa(users: Record<string, HaUserInfo>) {
   const port = (wss.address() as { port: number }).port;
   return { url: `ws://127.0.0.1:${port}`, stats, close: () => new Promise<void>((r) => { for (const c of wss.clients) c.terminate(); wss.close(() => r()); }) };
 }
+
+import type { ActivityInput } from "../src/repo/activities.ts";
+import type { Repos } from "../src/repo/index.ts";
+
+export function activity(id: number, date: string, over: Partial<ActivityInput> = {}): ActivityInput {
+  return {
+    id, start_utc: `${date}T06:00:00.000Z`, date, name: `Activity ${id}`, type_key: "running", sport: "running",
+    distance_m: 10000, duration_s: 3000, moving_s: 2950, elevation_gain_m: 50, avg_hr: 150, max_hr: 175, avg_power: null, norm_power: null,
+    avg_speed: 3.33, max_speed: 4.5, calories: 700, vo2max: null, te_aerobic: null, te_anaerobic: null, start_lat: null, start_lon: null,
+    total_sets: null, total_reps: null, summary_json: "{}", ...over,
+  };
+}
+
+export function seedUser(repos: Repos, id: string, name = id): void {
+  repos.users.upsert({ id, name });
+}
