@@ -164,3 +164,16 @@ export function defaultRange(from: string | undefined, to: string | undefined, d
   return { from: from ?? addDays(end, -(days - 1)), to: end };
 }
 export const rangeDays = (r: { from: string; to: string }): number => diffDays(r.to, r.from) + 1;
+
+const parseZones = (s: AthleteSettings) => (s.zones_json ? (JSON.parse(s.zones_json) as ZoneConfig) : null);
+export const athleteView = (s: AthleteSettings) => ({ ...s, zones: parseZones(s) });
+
+/** Thresholds valid on `date`, the history, and the zones in effect (custom ones, else derived from the thresholds). */
+export function athleteSnapshot(repos: Repos, userId: string, date: string) {
+  const current = repos.athlete.at(userId, date);
+  return {
+    current: current ? athleteView(current) : null,
+    history: repos.athlete.history(userId).map(athleteView),
+    effectiveZones: { hr: zoneFloors(current, "hr"), pace: zoneFloors(current, "pace"), power: zoneFloors(current, "power") },
+  };
+}

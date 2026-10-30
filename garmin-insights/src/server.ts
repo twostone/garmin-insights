@@ -9,6 +9,7 @@ import { createIngressApp } from "./listeners/ingress.ts";
 import { logger, resolveLogLevel, setLogLevel } from "./log.ts";
 import { externalEnabled, parseSettings, readAddonOptions } from "./options.ts";
 import { loadOrCreateMasterKey } from "./crypto.ts";
+import { createMcpEndpoint } from "./mcp/server.ts";
 import { createServices } from "./services.ts";
 import { APP_VERSION } from "./server-info.ts";
 
@@ -57,6 +58,7 @@ if (externalEnabled(settings)) {
     appUrl: settings.appExternalUrl,
     verifier: createHaTokenVerifier({ wsUrl: process.env.HA_WS_URL ?? DEFAULT_HA_WS_URL }),
     api,
+    mcp: createMcpEndpoint(services),
     staticRoot,
   });
   serve({ fetch: external.fetch, port: Number(process.env.EXTERNAL_PORT ?? 8100) }, (i) => log.info("external_listening", { port: i.port }));

@@ -1,10 +1,9 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { zoneFloors } from "../analytics/queries.ts";
+import { athleteSnapshot } from "../analytics/queries.ts";
 import { recomputeLoads } from "../analytics/recompute.ts";
 import { todayLocal } from "../dates.ts";
 import type { FitStore } from "../fit/store.ts";
 import type { Repos } from "../repo/index.ts";
-import type { AthleteSettings } from "../repo/athlete.ts";
 import type { Env } from "../types.ts";
 import { dateSchema, errors, json, userOf } from "./common.ts";
 
@@ -33,22 +32,9 @@ const athleteInput = z.object({
   zones: zonesSchema.nullable().optional(),
 });
 
-const view = (s: AthleteSettings) => ({ ...s, zones: s.zones_json ? (JSON.parse(s.zones_json) as z.infer<typeof zonesSchema>) : null });
-
 export function settingsRoutes(deps: { repos: Repos; fit: FitStore }) {
   const { repos } = deps;
-  const snapshot = (userId: string) => {
-    const today = todayLocal();
-    const current = repos.athlete.at(userId, today);
-    return {
-      language: repos.users.get(userId)?.language ?? null,
-      athlete: {
-        current: current ? view(current) : null,
-        history: repos.athlete.history(userId).map(view),
-        effectiveZones: { hr: zoneFloors(current, "hr"), pace: zoneFloors(current, "pace"), power: zoneFloors(current, "power") },
-      },
-    };
-  };
+  const snapshot = (userId: string) => ({ language: repos.users.get(userId)?.language ?? null, athlete: athleteSnapshot(repos, userId, todayLocal()) });
   return new OpenAPIHono<Env>()
     .openapi(createRoute({ method: "get", path: "/settings", responses: { 200: json(settingsSchema) } }), (c) => c.json(snapshot(userOf(c).id), 200))
     .openapi(

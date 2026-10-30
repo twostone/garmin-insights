@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { activityAnalysis, defaultRange, parseSummary } from "../analytics/queries.ts";
+import { downsample } from "../analytics/downsample.ts";
+import { activityAnalysis, parseSummary } from "../analytics/queries.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import type { FitStore } from "../fit/store.ts";
 import type { Repos } from "../repo/index.ts";
@@ -33,13 +34,6 @@ const exerciseSchema = z.object({ exercise: z.string(), muscle_group: z.string()
 
 const MAX_SAMPLES = 5000;
 const DEFAULT_SAMPLES = 1500;
-
-/** Every n-th sample, always including the first and the last: enough for a chart or a map line. */
-export function downsample<T>(rows: readonly T[], max: number): T[] {
-  if (rows.length <= max) return [...rows];
-  const step = (rows.length - 1) / (max - 1);
-  return Array.from({ length: max }, (_, i) => rows[Math.round(i * step)]!);
-}
 
 export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
   const { repos } = deps;
@@ -183,4 +177,3 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
       },
     );
 }
-export { defaultRange };
