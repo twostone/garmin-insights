@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from "$app/paths";
+  import { href } from "$lib/nav";
   import { api, unwrap } from "$lib/api.ts";
   import { m } from "$lib/paraglide/messages.js";
   import { pmcOption, volumeOption } from "$lib/charts.ts";
@@ -38,7 +38,7 @@
       <li>{m.onboarding_step2()}</li>
       <li>{m.onboarding_step3()}</li>
     </ol>
-    <a class="btn primary" href={resolve("/settings")}>{m.onboarding_cta()}</a>
+    <a class="btn primary" href={href("/settings")}>{m.onboarding_cta()}</a>
   </section>
 {/if}
 
@@ -78,7 +78,7 @@
 </div>
 
 <section class="card">
-  <div class="row between"><h2>{m.dashboard_recent()}</h2><a href={resolve("/activities")}>{m.show_all()}</a></div>
+  <div class="row between"><h2>{m.dashboard_recent()}</h2><a href={href("/activities")}>{m.show_all()}</a></div>
   {#each recent.data?.items ?? [] as activity (activity.id)}
     <ActivityRow {activity} />
   {:else}

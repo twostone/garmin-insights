@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from "$app/paths";
+  import { href } from "$lib/nav";
   import { m } from "$lib/paraglide/messages.js";
   import { sportName } from "$lib/charts.ts";
   import { dateLabel, duration, km, num, sportColor } from "$lib/format.ts";
@@ -8,7 +8,7 @@
   let { activity }: { activity: Activity } = $props();
 </script>
 
-<a class="act" href={resolve("/activities/[id]", { id: String(activity.id) })}>
+<a class="act" href={href("/activities/[id]", { id: String(activity.id) })}>
   <span class="dot" style:background={sportColor(activity.sport)}></span>
   <span class="main">
     <span class="name" style="display:block">{activity.name || sportName(activity.sport)}</span>
