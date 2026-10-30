@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { resolve } from "$app/paths";
+  import { href } from "$lib/nav";
   import { m } from "$lib/paraglide/messages.js";
   import { api, unwrap } from "$lib/api.ts";
   import { seriesOption, sportName, zoneOption } from "$lib/charts.ts";
@@ -43,7 +43,7 @@
   }
 </script>
 
-<p><a href={resolve("/activities")}>← {m.nav_activities()}</a></p>
+<p><a href={href("/activities")}>← {m.nav_activities()}</a></p>
 
 {#if detail.error}
   <p class="danger" role="alert">{m.error_not_found()}</p>

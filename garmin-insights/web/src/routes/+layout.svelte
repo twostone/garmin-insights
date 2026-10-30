@@ -2,7 +2,7 @@
   import "../app.css";
   import { onMount } from "svelte";
   import { page } from "$app/state";
-  import { resolve } from "$app/paths";
+  import { href } from "$lib/nav";
   import { m } from "$lib/paraglide/messages.js";
   import { session } from "$lib/session.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
@@ -53,17 +53,17 @@
 {:else}
   <nav class="tabs" aria-label={m.app_name()}>
     {#each tabs as tab (tab.id)}
-      <a href={resolve(tab.id)} aria-current={active(tab.id) ? "page" : undefined}>{tab.label()}</a>
+      <a href={href(tab.id)} aria-current={active(tab.id) ? "page" : undefined}>{tab.label()}</a>
     {/each}
   </nav>
 
   <div class="page">
     {#if key && key.status === "invalid"}
-      <div class="banner danger" role="alert">{m.banner_key_invalid()} <a href={resolve("/settings")}>{m.nav_settings()}</a></div>
+      <div class="banner danger" role="alert">{m.banner_key_invalid()} <a href={href("/settings")}>{m.nav_settings()}</a></div>
     {:else if key && key.status === "expired"}
-      <div class="banner danger" role="alert">{m.banner_key_expired()} <a href={resolve("/settings")}>{m.nav_settings()}</a></div>
+      <div class="banner danger" role="alert">{m.banner_key_expired()} <a href={href("/settings")}>{m.nav_settings()}</a></div>
     {:else if key && key.daysLeft !== null && key.daysLeft <= 7}
-      <div class="banner warn" role="status">{m.banner_key_expiring({ days: key.daysLeft })} <a href={resolve("/settings")}>{m.nav_settings()}</a></div>
+      <div class="banner warn" role="status">{m.banner_key_expiring({ days: key.daysLeft })} <a href={href("/settings")}>{m.nav_settings()}</a></div>
     {/if}
 
     {#if sync.progress?.running || pending > 0}

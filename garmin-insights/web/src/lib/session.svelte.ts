@@ -1,4 +1,3 @@
-import { goto } from "$app/navigation";
 import { AuthError, CALLBACK_PATH, clearRefreshToken, finishLogin, refresh, revoke, startLogin, storedRefreshToken, type OAuthConfig, type Tokens } from "./auth.ts";
 import { readContext, type AppContext } from "./context.ts";
 
@@ -31,12 +30,10 @@ class Session {
     if (!cfg) return void (this.status = "anonymous");
     try {
       if (location.pathname.endsWith(`/${CALLBACK_PATH}`)) {
-        const { tokens, returnTo } = await finishLogin(cfg, location.search);
-        this.tokens = tokens;
-        // Back to the app root; the hash router takes over from here.
-        history.replaceState(null, "", new URL(`./${returnTo}`, document.baseURI));
-        await goto(returnTo.replace(/^#/, "") || "/", { replaceState: true });
-        this.status = "authenticated";
+        const { returnTo } = await finishLogin(cfg, location.search);
+        // Reload at the app root instead of routing client-side: SvelteKit derived its base from /auth/callback ("/auth"),
+        // so every link and goto would point below /auth. The refresh token is stored; init() renews it after the reload.
+        location.replace(new URL(`./${returnTo}`, document.baseURI).href);
         return;
       }
       const stored = storedRefreshToken();
