@@ -122,6 +122,24 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
 - **Tests** für neue Backend-Logik (`node:test`, `app.request`); Netzwerkcode gegen lokale Testserver, nie gegen das Internet.
   Analytics gegen Referenzwerte (TDD). FIT-Fixtures werden mit dem `Encoder` aus `@garmin/fitsdk` erzeugt.
 
+## Entscheidungen, die vom ursprünglichen Plan abweichen
+
+- **Hash-Router statt Pfad-Router** (Ingress-Präfix wechselt); Hono macht SvelteKits absolute URLs relativ und setzt `<base href>`.
+- **SvelteKit 2.x statt 3** (`@vite-pwa/sveltekit` unterstützt nur Kit 2); **MCP-SDK 2.4** (inzwischen stabil, exakt gepinnt),
+  dessen `requireBearerAuth` und `createMcpHandler` die Token-Prüfung und den stateless Handler liefern (`@modelcontextprotocol/hono`
+  bringt nur Host-/Origin-Prüfung und Body-Parsing und wird nicht gebraucht; es ist als Dependency gepinnt, aber ungenutzt: vor dem
+  ersten Release entscheiden, ob es entfällt).
+- **Garmin-Typen** kommen aus der Spec, die im JS-Bundle der Swagger-Seite steckt (`docs/garmin-api.md`); `openapi-typescript` läuft per
+  `npx`, weil es TypeScript 6 nicht als Peer akzeptiert.
+- **`sessions`-Tabelle entfällt**: Session-Werte aus der FIT-Datei (NP, Schwellenleistung) gehen direkt in die Berechnungen,
+  die Zusammenfassung von Garmin liegt als `summary_json` an der Aktivität.
+- **Benachrichtigungen** als persistente HA-Benachrichtigung (HA kennt keine pro User), nicht an `notify.mobile_app_*`.
+- **Aggregierte Best Efforts** kommen aus Garmins Feldern je Aktivität (`fastestSplit_*`, `maxAvgPower_*`), die Auswertung einer
+  einzelnen Aktivität rechnet aus den Samples.
+- **Paraglide-Modul** (`@inlang/plugin-message-format`) liegt lokal in `node_modules`, damit der Build ohne CDN auskommt.
+- **MapLibre 6** braucht seinen Worker als eigene Datei: `vite.config.ts` legt `maplibre/*.mjs` neben die App, `MapView.svelte`
+  verweist relativ zu `<base href>` darauf.
+
 ## Stand und offene Punkte
 
 Siehe `docs/garmin-api.md` (Garmin-Endpunkte, unbekannte Limits) und die Abschnitte „Offen“ in DOCS.md/README.md. Nicht am
