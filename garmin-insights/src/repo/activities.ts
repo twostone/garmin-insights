@@ -130,6 +130,17 @@ export function activitiesRepo(db: DatabaseSync) {
       void db.prepare("UPDATE activities SET fit_status = ? WHERE user_id = ? AND id = ?").run(status, userId, id),
     setLoad: (userId: string, id: number, load: { trimp: number | null; tss: number | null; tss_method: string | null }): void =>
       void db.prepare("UPDATE activities SET trimp = ?, tss = ?, tss_method = ? WHERE user_id = ? AND id = ?").run(load.trimp, load.tss, load.tss_method, userId, id),
+    /** Highest heart rate ever recorded: the fallback for HR max when the athlete has none configured. */
+    maxHr: (userId: string): number | null =>
+      (db.prepare("SELECT MAX(max_hr) AS m FROM activities WHERE user_id = ?").get(userId) as { m: number | null }).m,
+    /** Summed load per day, from the per-activity values. */
+    dailyLoad: (userId: string, from: string, to: string): { date: string; trimp: number; tss: number }[] =>
+      db
+        .prepare(
+          `SELECT date, COALESCE(SUM(trimp), 0) AS trimp, COALESCE(SUM(tss), 0) AS tss FROM activities
+           WHERE user_id = ? AND date >= ? AND date <= ? GROUP BY date ORDER BY date`,
+        )
+        .all(userId, from, to) as { date: string; trimp: number; tss: number }[],
     /** Oldest and newest activity date, for the range pickers. */
     span: (userId: string): { first: string | null; last: string | null } =>
       db.prepare("SELECT MIN(date) AS first, MAX(date) AS last FROM activities WHERE user_id = ?").get(userId) as { first: string | null; last: string | null },

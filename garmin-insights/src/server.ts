@@ -8,7 +8,8 @@ import { createExternalApp } from "./listeners/external.ts";
 import { createIngressApp } from "./listeners/ingress.ts";
 import { logger, resolveLogLevel, setLogLevel } from "./log.ts";
 import { externalEnabled, parseSettings, readAddonOptions } from "./options.ts";
-import { createRepos } from "./repo/index.ts";
+import { loadOrCreateMasterKey } from "./crypto.ts";
+import { createServices } from "./services.ts";
 import { APP_VERSION } from "./server-info.ts";
 
 // Options come from /data/options.json (Supervisor); environment variables override them for development and the smoke test.
@@ -31,8 +32,18 @@ log.info("starting", {
 const dataDir = resolve(process.env.DATA_DIR ?? "./data");
 const dbPath = process.env.DB_PATH ?? join(dataDir, "garmin-insights.db");
 if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
-const repos = createRepos(openDb(dbPath));
-const api = createApi({ repos });
+// Only inside the app: the Supervisor injects SUPERVISOR_TOKEN (needs homeassistant_api in config.yaml).
+const services = createServices({
+  db: openDb(dbPath),
+  dataDir,
+  masterKey: loadOrCreateMasterKey(join(dataDir, "secret.key")),
+  supervisorToken: process.env.SUPERVISOR_TOKEN ?? null,
+});
+const api = createApi(services);
+services.sync.start(settings.syncIntervalMinutes * 60_000);
+const EXPIRY_CHECK_MS = 6 * 3600_000;
+void services.keys.checkExpiry();
+setInterval(() => void services.keys.checkExpiry(), EXPIRY_CHECK_MS).unref();
 const staticRoot = resolve(process.env.STATIC_DIR ?? "./dist");
 
 const ingressPort = Number(process.env.PORT ?? 8099);

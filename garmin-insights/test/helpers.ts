@@ -2,8 +2,10 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
+import { randomBytes } from "node:crypto";
 import { createApi } from "../src/api/index.ts";
 import { openDb } from "../src/db.ts";
+import { createServices, type ServiceOptions } from "../src/services.ts";
 import { setLogSink } from "../src/log.ts";
 import { createRepos } from "../src/repo/index.ts";
 
@@ -24,9 +26,14 @@ export function memoryRepos() {
   return createRepos(openDb(":memory:"));
 }
 
-export function testApi() {
-  const repos = memoryRepos();
-  return { repos, api: createApi({ repos }) };
+export function testServices(over: Partial<ServiceOptions> = {}) {
+  const dataDir = mkdtempSync(join(tmpdir(), "gi-data-"));
+  return createServices({ db: openDb(":memory:"), dataDir, masterKey: randomBytes(32), supervisorToken: null, ...over });
+}
+
+export function testApi(over: Partial<ServiceOptions> = {}) {
+  const services = testServices(over);
+  return { ...services, api: createApi(services) };
 }
 
 export function jwt(expSecondsFromNow = 1800, now = Date.now()): string {
