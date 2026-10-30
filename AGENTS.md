@@ -80,7 +80,7 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
 - **Analytics sind reine Funktionen** (Eingabe: Samples/Zahlen/Schwellen, Ausgabe: Zahlen); Referenzwerte stehen in den Tests.
 - **MCP**: nur kuratierte Tools (kein SQL), zod-Schemas, strukturierte Outputs, `readOnlyHint` (außer `trigger_sync`), pro
   Request ein neuer Server (stateless), auf den User aus dem Token gescopt. Ausgaben englisch, metrische Einheiten.
-  **Das MCP-SDK v2 ist exakt gepinnt** (`@modelcontextprotocol/server`/`hono`/`client`); Updates bewusst und einzeln.
+  **Das MCP-SDK v2 ist exakt gepinnt** (`@modelcontextprotocol/server`/`client`); Updates bewusst und einzeln.
 - **SvelteKit bleibt auf 2.x**, solange `@vite-pwa/sveltekit` Kit 3 nicht unterstützt (adapter-static 3.x dazu).
 - **TypeScript < 7** (svelte-check), `tsx` bleibt Runtime-Dependency (Container startet per `node --import tsx`).
 
@@ -126,9 +126,8 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
 
 - **Hash-Router statt Pfad-Router** (Ingress-Präfix wechselt); Hono macht SvelteKits absolute URLs relativ und setzt `<base href>`.
 - **SvelteKit 2.x statt 3** (`@vite-pwa/sveltekit` unterstützt nur Kit 2); **MCP-SDK 2.4** (inzwischen stabil, exakt gepinnt),
-  dessen `requireBearerAuth` und `createMcpHandler` die Token-Prüfung und den stateless Handler liefern (`@modelcontextprotocol/hono`
-  bringt nur Host-/Origin-Prüfung und Body-Parsing und wird nicht gebraucht; es ist als Dependency gepinnt, aber ungenutzt: vor dem
-  ersten Release entscheiden, ob es entfällt).
+  dessen `requireBearerAuth` und `createMcpHandler` die Token-Prüfung und den stateless Handler liefern. `@modelcontextprotocol/hono`
+  (nur Host-/Origin-Prüfung und Body-Parsing) ist nicht eingebaut: Bearer-Token statt Cookies, und der Handler liest den Body selbst.
 - **Garmin-Typen** kommen aus der Spec, die im JS-Bundle der Swagger-Seite steckt (`docs/garmin-api.md`); `openapi-typescript` läuft per
   `npx`, weil es TypeScript 6 nicht als Peer akzeptiert.
 - **`sessions`-Tabelle entfällt**: Session-Werte aus der FIT-Datei (NP, Schwellenleistung) gehen direkt in die Berechnungen,

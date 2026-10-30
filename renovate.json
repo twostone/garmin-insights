@@ -34,7 +34,7 @@
     },
     {
       "description": "MCP-SDK v2 ist exakt gepinnt (siehe AGENTS.md): Updates einzeln und bewusst",
-      "matchPackageNames": ["@modelcontextprotocol/server", "@modelcontextprotocol/hono", "@modelcontextprotocol/client"],
+      "matchPackageNames": ["@modelcontextprotocol/server", "@modelcontextprotocol/client"],
       "groupName": "MCP-SDK",
       "rangeStrategy": "pin"
     },
