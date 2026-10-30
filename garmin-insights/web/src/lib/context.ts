@@ -5,9 +5,10 @@ export type AppContext = {
   basePath: string;
   haUrl: string | null;
   clientId: string | null;
+  mcpUrl: string | null;
 };
 
-const FALLBACK: AppContext = { mode: "ingress", basePath: "/", haUrl: null, clientId: null };
+const FALLBACK: AppContext = { mode: "ingress", basePath: "/", haUrl: null, clientId: null, mcpUrl: null };
 
 export function readContext(doc: Pick<Document, "getElementById"> = document): AppContext {
   try {

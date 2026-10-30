@@ -79,7 +79,7 @@ Unter `/api` (Ingress: relativ zur App-URL, extern: `https://<app_external_url>/
 
 ## MCP-Server (für Claude & Co.)
 
-Adresse: `https://<app_external_url>/mcp` (Streamable HTTP). Die Anmeldung läuft über **Home Assistant als
+Adresse: `https://<app_external_url>/mcp` (Streamable HTTP). Die Adresse und die Schritte zum Verbinden stehen auch in der App unter *Einstellungen → MCP-Server*. Die Anmeldung läuft über **Home Assistant als
 Authorization Server**: Die App liefert unter `/.well-known/oauth-protected-resource` die Metadaten, die MCP-Clients zu Home
 Assistant führen; dort meldest du dich an. Die Tokens holen sich die Clients selbst.
 

@@ -48,7 +48,9 @@ test("external: forged ingress headers do not authenticate and do not change the
 
 test("external: api/context is public, other api routes and /mcp need a token", async () => {
   const app = external();
-  assert.equal((await app.request("/api/context")).status, 200);
+  const ctx = await app.request("/api/context");
+  assert.equal(ctx.status, 200);
+  assert.equal((await ctx.json()).mcpUrl, "https://garmin.example.test/mcp");
   const mcp = await app.request("/mcp", { method: "POST" });
   assert.equal(mcp.status, 401);
   assert.match(mcp.headers.get("www-authenticate") ?? "", /^Bearer .*resource_metadata="https:\/\/garmin\.example\.test\/\.well-known\/oauth-protected-resource\/mcp"/);

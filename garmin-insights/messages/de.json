@@ -160,6 +160,7 @@
   "settings_key": "Garmin-Key",
   "settings_sync": "Synchronisation",
   "settings_athlete": "Zonen und Schwellen",
+  "settings_mcp": "MCP-Server",
   "settings_language": "Sprache",
   "settings_data": "Daten und Konto",
   "key_status_label": "Status",
@@ -169,6 +170,7 @@
   "key_status_invalid": "von Garmin abgelehnt",
   "key_expires": "läuft ab am {date}",
   "key_help": "Erzeuge den Key in Garmin Connect unter Einstellungen, Personal API. Er wird sofort geprüft, verschlüsselt gespeichert und nie wieder angezeigt.",
+  "key_link": "Garmin Connect öffnen: Personal-API-Key erzeugen",
   "key_input": "Personal-API-Key",
   "key_expires_input": "Ablaufdatum des Keys (optional, für die Erinnerung)",
   "key_save": "Prüfen und speichern",
@@ -227,5 +229,14 @@
   "tss_power": "aus Leistung",
   "tss_run_pace": "aus Pace",
   "tss_hr": "aus Herzfrequenz",
-  "tss_hr_estimated": "aus Herzfrequenz, Schwellen geschätzt"
+  "tss_hr_estimated": "aus Herzfrequenz, Schwellen geschätzt",
+  "mcp_help": "Über den MCP-Server kann jeder KI-Assistent bzw. MCP-Client deine Trainings- und Gesundheitsdaten im Detail analysieren. Er sieht immer nur deine eigenen Daten und meldet sich über Home Assistant (OAuth) an.",
+  "mcp_url": "Adresse des MCP-Servers",
+  "mcp_generic": "Jeder andere MCP-Client: einen Remote-Server mit dieser Adresse hinzufügen (Transport Streamable HTTP) und bei der Anmeldung Home Assistant verwenden.",
+  "mcp_copy": "Kopieren",
+  "mcp_copied": "Kopiert",
+  "mcp_claude_ai": "Beispiel claude.ai: Einstellungen → Konnektoren → Benutzerdefinierten Konnektor hinzufügen, Adresse einfügen.",
+  "mcp_claude_code": "Beispiel Claude Code: Diesen Befehl ausführen, danach /mcp eingeben und anmelden.",
+  "mcp_tools": "Verfügbar: {tools}. Alle nur lesend, außer trigger_sync, das eine Synchronisation startet.",
+  "mcp_unavailable": "Der MCP-Server braucht die App-Optionen ha_external_url und app_external_url sowie einen Reverse-Proxy mit HTTPS vor Port 8100. Trage sie in der App-Konfiguration ein und starte die App neu."
 }
