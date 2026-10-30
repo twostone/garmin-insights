@@ -4,17 +4,35 @@
   "separate-pull-requests": true,
   "include-component-in-tag": false,
   "changelog-sections": [
-    { "type": "feat", "section": "Neu" },
-    { "type": "fix", "section": "Behoben" },
-    { "type": "perf", "section": "Performance" },
-    { "type": "revert", "section": "Zurückgenommen" }
+    {
+      "type": "feat",
+      "section": "Neu"
+    },
+    {
+      "type": "fix",
+      "section": "Behoben"
+    },
+    {
+      "type": "perf",
+      "section": "Performance"
+    },
+    {
+      "type": "revert",
+      "section": "Zurückgenommen"
+    }
   ],
   "packages": {
     "garmin-insights": {
       "release-type": "node",
       "package-name": "garmin-insights",
       "changelog-path": "CHANGELOG.md",
-      "extra-files": [{ "type": "generic", "path": "config.yaml" }]
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "config.yaml"
+        }
+      ],
+      "initial-version": "0.1.0"
     }
   }
 }
