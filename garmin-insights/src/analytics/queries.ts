@@ -4,6 +4,7 @@ import type { AthleteSettings } from "../repo/athlete.ts";
 import type { Repos } from "../repo/index.ts";
 import { bestEfforts, decoupling, meanMaxPower, POWER_DURATIONS_S, RUN_DISTANCES_M, type BestEffort, type MeanMax } from "./efforts.ts";
 import { healthTrends } from "./health.ts";
+import { BASELINE_DAYS, readiness, type ReadinessDay } from "./readiness.ts";
 import { perSecond, type Sample } from "./load.ts";
 import { strengthVolume } from "./strength.ts";
 import { volumeBy } from "./volume.ts";
@@ -178,4 +179,22 @@ export function athleteSnapshot(repos: Repos, userId: string, date: string) {
     history: repos.athlete.history(userId).map(athleteView),
     effectiveZones: { hr: zoneFloors(current, "hr"), pace: zoneFloors(current, "pace"), power: zoneFloors(current, "power") },
   };
+}
+
+/** Readiness of `date`: the day and the baseline window before it, read from health and load tables. */
+export function readinessOn(repos: Repos, userId: string, date: string) {
+  const from = addDays(date, -BASELINE_DAYS);
+  const dailies = new Map(repos.health.dailies.range(userId, from, date).map((r) => [r.date, r]));
+  const sleep = new Map(repos.health.sleep.range(userId, from, date).map((r) => [r.date, r]));
+  const hrv = new Map(repos.health.hrv.range(userId, from, date).map((r) => [r.date, r]));
+  const load = new Map(repos.analytics.range(userId, from, date).map((r) => [r.date, r]));
+  const days: ReadinessDay[] = [];
+  for (let d = from; d <= date; d = addDays(d, 1)) {
+    days.push({
+      date: d, hrv: hrv.get(d)?.last_night_avg ?? null, hrvBaselineLow: hrv.get(d)?.baseline_low ?? null, hrvBaselineHigh: hrv.get(d)?.baseline_high ?? null,
+      restingHr: dailies.get(d)?.resting_hr ?? null, sleepS: sleep.get(d)?.sleep_s ?? null, sleepScore: sleep.get(d)?.score ?? null,
+      bodyBatteryHigh: dailies.get(d)?.body_battery_high ?? null, tsb: load.get(d)?.tsb ?? null,
+    });
+  }
+  return readiness(days, date);
 }

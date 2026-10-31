@@ -1,15 +1,17 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { bestEffortsInRange, defaultRange, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import { bestEffortsInRange, defaultRange, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
 import type { Repos } from "../repo/index.ts";
 import type { Env } from "../types.ts";
-import { customSportQuery, errors, json, MAX_RANGE_DAYS, rangeQuery, sportSchema, userOf } from "./common.ts";
+import { todayLocal } from "../dates.ts";
+import { customSportQuery, dateSchema, errors, json, MAX_RANGE_DAYS, rangeQuery, sportSchema, userOf } from "./common.ts";
 
 const DEFAULT_PMC_DAYS = 180;
 const DEFAULT_RANGE_DAYS = 90;
 
+const readinessStatus = z.enum(["good", "watch", "poor", "unknown"]);
 const trendMetric = z.object({ avg7: z.number().nullable(), baseline28: z.number().nullable(), deltaVsBaseline: z.number().nullable() });
 
-export function analyticsRoutes(deps: { repos: Repos }) {
+export function analyticsRoutes(deps: { repos: Repos; today?: () => string }) {
   const { repos } = deps;
   const tooLong = (r: { from: string; to: string }) => rangeDays(r) > MAX_RANGE_DAYS || rangeDays(r) < 1;
   return new OpenAPIHono<Env>()
@@ -124,5 +126,19 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
         return c.json(strengthInRange(repos, userOf(c).id, r), 200);
       },
+    )
+    .openapi(
+      createRoute({
+        method: "get",
+        path: "/analytics/readiness",
+        request: { query: z.object({ date: dateSchema.optional() }) },
+        responses: {
+          200: json(z.object({
+            date: z.string(), status: readinessStatus,
+            components: z.array(z.object({ key: z.enum(["hrv", "resting_hr", "sleep", "body_battery", "tsb"]), value: z.number().nullable(), reference: z.number().nullable(), status: readinessStatus, reason: z.string() })),
+          })),
+        },
+      }),
+      (c) => c.json(readinessOn(repos, userOf(c).id, c.req.valid("query").date ?? (deps.today ?? todayLocal)()), 200),
     );
 }

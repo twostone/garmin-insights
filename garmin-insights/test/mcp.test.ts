@@ -40,7 +40,7 @@ test("tools and prompts are listed; everything but trigger_sync is read-only", a
   const tools = (await c.listTools()).tools;
   assert.deepEqual(tools.map((t) => t.name).sort(), [
     "compare_activities", "get_activity", "get_activity_samples", "get_athlete_settings", "get_best_efforts", "get_health_trends",
-    "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "trigger_sync",
+    "get_readiness", "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "trigger_sync",
   ]);
   for (const t of tools) {
     assert.ok(t.inputSchema, t.name);
@@ -48,6 +48,18 @@ test("tools and prompts are listed; everything but trigger_sync is read-only", a
     assert.equal(t.annotations?.readOnlyHint, t.name !== "trigger_sync", t.name);
   }
   assert.deepEqual((await c.listPrompts()).prompts.map((p) => p.name).sort(), ["analyze_week", "race_readiness"]);
+});
+
+test("get_readiness: components with reasons, default today, scoped to the user", async () => {
+  const t = services();
+  const r = (await call(await connect(t, "alice"), "get_readiness", { date: "2026-10-29" })).structuredContent!;
+  assert.equal(r.date, "2026-10-29");
+  assert.equal((await call(await connect(t, "alice"), "get_readiness")).isError, undefined);
+  assert.equal(r.components.length, 5);
+  assert.equal(r.components.find((c: any) => c.key === "hrv").status, "good");
+  assert.equal(r.components.find((c: any) => c.key === "resting_hr").status, "good"); // 54 against a 28-day mean of ~52
+    assert.ok(r.components.every((c: any) => c.reason.length > 0));
+  assert.equal((await call(await connect(t, "bob"), "get_readiness", { date: "2026-10-29" })).structuredContent!.status, "unknown");
 });
 
 test("list_activities: filters, metric units, structured and text output agree", async () => {
@@ -202,7 +214,7 @@ test("over HTTP: no token -> 401 with the metadata pointer; with a token the cli
     return client;
   };
   const alice = await clientFor(tokenAlice);
-  assert.equal((await alice.listTools()).tools.length, 12);
+  assert.equal((await alice.listTools()).tools.length, 13);
   assert.equal((await call(alice, "list_activities")).structuredContent!.total, 3);
   const bob = await clientFor(tokenBob);
   assert.equal((await call(bob, "list_activities")).structuredContent!.total, 1);
