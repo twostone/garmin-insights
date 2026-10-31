@@ -183,6 +183,21 @@ test("health ranges per user", async () => {
   assert.equal(trends.points[19].restingHr, 50);
 });
 
+test("readiness: rated per day from the user's own data, default is today", async () => {
+  const t = setup();
+  t.repos.users.upsert({ id: "alice", name: "a" });
+  t.repos.health.dailies.upsertMany("alice", [{ date: "2026-10-20", steps: 5000, resting_hr: 50, min_hr: 45, max_hr: 160, stress_avg: 25, body_battery_high: 90, body_battery_low: 12, active_minutes: 20 }]);
+  t.repos.health.hrv.upsertMany("alice", [{ date: "2026-10-20", last_night_avg: 40, weekly_avg: 58, last_night_5min_high: 80, baseline_low: 50, baseline_high: 70, status: "LOW" }]);
+  const r = await (await t.as("alice").get("/analytics/readiness?date=2026-10-20")).json();
+  assert.equal(r.date, "2026-10-20");
+  assert.equal(r.status, "poor");
+  assert.equal(r.components.find((c: { key: string }) => c.key === "hrv").status, "poor");
+  assert.equal(r.components.find((c: { key: string }) => c.key === "sleep").status, "unknown");
+  assert.equal((await (await t.as("bob").get("/analytics/readiness?date=2026-10-20")).json()).status, "unknown");
+  assert.equal((await t.as("alice").get("/analytics/readiness")).status, 200);
+  assert.equal((await t.as("alice").get("/analytics/readiness?date=nope")).status, 400);
+});
+
 test("settings: language, athlete thresholds (historised, recompute loads), delete a version", async () => {
   const t = setup();
   seed(t);

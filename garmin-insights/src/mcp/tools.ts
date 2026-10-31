@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { downsample } from "../analytics/downsample.ts";
 import { legOverview, parentAvgHr } from "../analytics/multisport.ts";
-import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import { isDate, todayLocal, weekStart } from "../dates.ts";
@@ -451,5 +451,23 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       annotations: readOnly,
     },
     async () => result({ custom_sports: repos.customSports.listDetailed(uid).map((s) => ({ name: s.name, garmin_types: s.type_keys, activities: s.activity_count })) }),
+  );
+
+  server.registerTool(
+    "get_readiness",
+    {
+      title: "Get readiness",
+      description: "Readiness of one day: overnight HRV (against Garmin's baseline, else the 28-day average), resting heart rate (deviation from the 28-day average in bpm), sleep (duration, against the 28-day average and a minimum), body battery peak and training form (TSB). Each component is good, watch, poor or unknown (no data) with a reason; the overall status is the worst known component. Default date: today.",
+      inputSchema: z.object({ date: date.optional().describe("YYYY-MM-DD (default: today)") }),
+      outputSchema: z.object({
+        date: z.string(), status: z.enum(["good", "watch", "poor", "unknown"]),
+        components: z.array(z.object({ key: z.enum(["hrv", "resting_hr", "sleep", "body_battery", "tsb"]), value: z.number().nullable(), reference: z.number().nullable(), status: z.enum(["good", "watch", "poor", "unknown"]), reason: z.string() })),
+      }),
+      annotations: readOnly,
+    },
+    async (q) => {
+      const r = readinessOn(repos, uid, q.date ?? today());
+      return result({ ...r, components: r.components.map((c) => ({ ...c, value: round(c.value, 1), reference: round(c.reference, 1) })) });
+    },
   );
 }
