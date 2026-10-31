@@ -1,6 +1,6 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { downsample } from "../analytics/downsample.ts";
-import { legOverview, parentAvgHr } from "../analytics/multisport.ts";
+import { legOverview, parentHr } from "../analytics/multisport.ts";
 import { activityAnalysis, parseSummary } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
@@ -93,10 +93,10 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
         const user = userOf(c).id;
         const activity = repos.activities.get(user, c.req.valid("param").id);
         if (!activity) return c.json({ error: "not_found" }, 404);
-        // Multisport: the legs, and the parent's average HR from them when Garmin sent none.
+        // Multisport: the legs, and the parent's average and cleaned max HR from them.
         const legs = repos.activities.legs(user, activity.id);
         return c.json({
-          activity: { ...activity, avg_hr: parentAvgHr(activity, legs) },
+          activity: parentHr(activity, legs),
           summary: parseSummary(repos.activities.summaryJson(user, activity.id)),
           legs: legOverview(activity, legs),
         }, 200);

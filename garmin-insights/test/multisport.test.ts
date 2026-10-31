@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { Client } from "@modelcontextprotocol/client";
 import { Hono } from "hono";
-import { durationWeightedHr, legOverview, parentAvgHr } from "../src/analytics/multisport.ts";
+import { durationWeightedHr, legOverview, parentAvgHr, parentHr } from "../src/analytics/multisport.ts";
 import { buildMcpServer } from "../src/mcp/server.ts";
 import type { Env } from "../src/types.ts";
 import type { GarminApi } from "../src/garmin/client.ts";
@@ -19,6 +19,19 @@ test("parent HR: duration-weighted over the legs that have HR and a duration", (
   assert.deepEqual(legOverview({ start_utc: "2026-10-01T05:59:30.000Z" }, legs), [
     { id: 2, sport: "rowing", garmin_type: "indoor_rowing", start_offset_s: 30, duration_s: 600, avg_hr: 120, tss: 10 },
   ]);
+});
+
+test("parent max HR: the highest cleaned leg maximum once the legs are checked, artifact seconds summed", () => {
+  const leg = { sport: "other", type_key: "hiit", start_utc: "2026-10-01T06:00:00.000Z", duration_s: 600, avg_hr: 130, tss: 10 };
+  const parent = { avg_hr: null, max_hr: 201, max_hr_clean: null, hr_artifact_s: null };
+  const legs = [
+    { ...leg, id: 2, max_hr: 201, max_hr_clean: 158, hr_artifact_s: 2 },
+    { ...leg, id: 3, max_hr: 165, max_hr_clean: 165, hr_artifact_s: 0 },
+  ];
+  assert.deepEqual(parentHr(parent, legs), { avg_hr: 130, max_hr: 201, max_hr_clean: 165, hr_artifact_s: 2 });
+  // Legs not checked yet (no FIT file so far): only the average is derived, the raw max stays.
+  const unchecked = legs.map((l) => ({ ...l, max_hr_clean: null, hr_artifact_s: null }));
+  assert.deepEqual(parentHr(parent, unchecked), { avg_hr: 130, max_hr: 201, max_hr_clean: null, hr_artifact_s: null });
 });
 
 // alice: CrossFit (parent 10 without HR, legs 11 and 12); bob: an activity with alice's parent id, but no legs.

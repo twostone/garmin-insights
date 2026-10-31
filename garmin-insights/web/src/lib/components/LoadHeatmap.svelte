@@ -64,7 +64,7 @@
 </section>
 
 <style>
-  .heat { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+  .heat { display: grid; grid-template-columns: repeat(12, minmax(0, 28px)); gap: 4px; }
   .col { display: grid; grid-template-rows: repeat(7, 1fr); gap: 4px; }
   .cell { aspect-ratio: 1; min-height: 14px; border-radius: 3px; background: var(--border); }
   .l1 { background: color-mix(in srgb, var(--accent) 30%, var(--border)); }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { downsample } from "../analytics/downsample.ts";
-import { legOverview, parentAvgHr } from "../analytics/multisport.ts";
+import { legOverview, parentHr } from "../analytics/multisport.ts";
 import type { PaddleMetrics } from "../analytics/paddling.ts";
 import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, paddlingTrends, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
@@ -125,11 +125,11 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       if (cs.error) return failure(cs.error);
       const f = { sport: q.sport, customSportId: cs.customSportId, from: q.from, to: q.to, topLevel: true };
       const rows = repos.activities.list(uid, { ...f, limit: q.limit, offset: q.offset, order: q.order });
-      // Multisport parents: how many legs (see get_activity), and the average HR from them when Garmin sent none.
+      // Multisport parents: how many legs (see get_activity), and the average and cleaned max HR from them.
       const activities = rows.map((a) => {
         if (!a.is_multisport_parent) return brief(a);
         const legs = repos.activities.legs(uid, a.id);
-        return { ...brief({ ...a, avg_hr: parentAvgHr(a, legs) }), legs_count: legs.length };
+        return { ...brief(parentHr(a, legs)), legs_count: legs.length };
       });
       return result({ total: repos.activities.count(uid, f), returned: rows.length, activities });
     },
@@ -171,7 +171,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       const strength = sets.length ? strengthVolume(sets) : null;
       const legs = repos.activities.legs(uid, activity_id);
       return result({
-        activity: brief({ ...a, avg_hr: parentAvgHr(a, legs) }),
+        activity: brief(parentHr(a, legs)),
         details_available: a.fit_status === "done",
         parent_activity_id: a.parent_id,
         legs: legOverview(a, legs),

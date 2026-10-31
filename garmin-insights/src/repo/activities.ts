@@ -73,6 +73,7 @@ export type ActivityRow = Omit<ActivityInput, "summary_json"> & {
 
 export type LegRow = {
   id: number; sport: Sport; type_key: string; start_utc: string; duration_s: number | null; fit_status: FitStatus; tss: number | null; avg_hr: number | null;
+  max_hr: number | null; max_hr_clean: number | null; hr_artifact_s: number | null;
 };
 
 /** Which activities an analysis looks at: a Garmin-derived sport, the user's own sport, or both. */
@@ -178,7 +179,7 @@ export function activitiesRepo(db: DatabaseSync) {
     legs: (userId: string, parentId: number): LegRow[] =>
       db
         .prepare(
-          `SELECT a.id, a.sport, a.type_key, a.start_utc, a.duration_s, a.fit_status, a.tss,
+          `SELECT a.id, a.sport, a.type_key, a.start_utc, a.duration_s, a.fit_status, a.tss, a.max_hr, a.max_hr_clean, a.hr_artifact_s,
                   COALESCE(a.avg_hr, (SELECT AVG(s.hr) FROM activity_samples s WHERE s.user_id = a.user_id AND s.activity_id = a.id AND s.hr > 0)) AS avg_hr
            FROM activities a WHERE a.user_id = ? AND a.parent_id = ? ORDER BY a.start_utc, a.id`,
         )

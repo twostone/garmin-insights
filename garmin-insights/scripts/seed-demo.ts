@@ -41,8 +41,28 @@ function rideSamples(seconds: number): SampleRow[] {
 const laps = (seconds: number, n: number, speed: number): LapRow[] =>
   Array.from({ length: n }, (_, idx) => ({ idx, start_s: (idx * seconds) / n, duration_s: seconds / n, distance_m: (speed * seconds) / n, avg_hr: 140 + idx * 2, max_hr: 150 + idx * 2, avg_power: null, avg_speed: speed, avg_cadence: 170, ascent_m: 8 }));
 
+function paddleSamples(seconds: number, speed: number): SampleRow[] {
+  let dist = 0;
+  return Array.from({ length: seconds }, (_, t) => {
+    const v = speed + noise(t, 0.2);
+    dist += v;
+    return { t, lat: null, lon: null, alt: null, hr: Math.round(128 + noise(t, 6)), power: null, cadence: Math.round(62 + noise(t, 4)), speed: v, dist, temp: 16 };
+  });
+}
+// Indoor rowing with two one-second optical spikes, so the heart-rate cleaning has something to show.
+function rowSamples(seconds: number): SampleRow[] {
+  return Array.from({ length: seconds }, (_, t) => ({
+    t, lat: null, lon: null, alt: null, hr: t === 600 ? 201 : t === 1200 ? 196 : Math.round(132 + noise(t, 6)), power: null, cadence: 26, speed: null, dist: null, temp: null,
+  }));
+}
+
+const dragonBoat = repos.customSports.create(user, "Drachenboot", ["stand_up_paddleboarding_v2"]);
+const oc1 = repos.customSports.create(user, "OC1", ["stand_up_paddleboarding_v2"]);
+const crossfit = repos.customSports.create(user, "CrossFit", ["multi_sport", "hiit", "indoor_cardio"]);
+
 let id = 1000;
 let weekRun = 0;
+let paddles = 0;
 for (let d = 119; d >= 0; d--) {
   const date = addDays(today, -d);
   const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
@@ -57,6 +77,29 @@ for (let d = 119; d >= 0; d--) {
     repos.activities.upsertSummary(user, row as never);
     return row.id;
   };
+  if (dow === 3) {
+    // Paddling on Wednesdays: dragon boat and OC1 alternate; every third one stays unassigned like a fresh Garmin import.
+    const secs = 3000;
+    const speed = 2.5 + (d % 5) * 0.05;
+    const pid = base("stand_up_paddleboarding_v2", "paddling", "Maschsee Stand-Up-Paddle-Boarding", secs, secs * speed, { avg_hr: 128, max_hr: 146 });
+    repos.activities.replaceDetail(user, pid, { samples: paddleSamples(secs, speed), laps: [], sets: [] });
+    repos.activities.setFitStatus(user, pid, "done");
+    const kind = paddles++ % 3;
+    if (kind < 2) repos.customSports.assign(user, pid, kind === 0 ? dragonBoat : oc1);
+  }
+  if (dow === 3 && d % 14 === 3) {
+    // Multisport every other week: indoor rowing (with HR spikes) and a HIIT leg under one parent.
+    const parent = base("multi_sport", "other", "CrossFit", 3600, 0, { avg_hr: null, max_hr: 201 });
+    repos.activities.setFitStatus(user, parent, "none");
+    repos.activities.setMultisport(user, parent, { parent_id: null, is_multisport_parent: 1 });
+    repos.customSports.assign(user, parent, crossfit);
+    const row = base("indoor_rowing", "rowing", "Indoor-Rudern", 1800, null, { avg_hr: 132, max_hr: 201, start_utc: `${date}T06:30:00.000Z` });
+    repos.activities.replaceDetail(user, row, { samples: rowSamples(1800), laps: [], sets: [] });
+    repos.activities.setFitStatus(user, row, "done");
+    const hiit = base("hiit", "other", "HIIT", 1800, null, { avg_hr: 140, max_hr: 168, start_utc: `${date}T07:00:00.000Z` });
+    repos.activities.setFitStatus(user, hiit, "none");
+    for (const leg of [row, hiit]) repos.activities.setMultisport(user, leg, { parent_id: parent, is_multisport_parent: 0 });
+  }
   if (dow === 2 || dow === 4 || dow === 6) {
     const secs = 1800 + (d % 5) * 300;
     const speed = 3.2 + (d % 4) * 0.1;
