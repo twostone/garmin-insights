@@ -8,6 +8,7 @@
   import SportFilter from "$lib/components/SportFilter.svelte";
   import WeeklyBalanceCard from "$lib/components/WeeklyBalanceCard.svelte";
   import { addDays, dateLabel, duration, num, pace, today } from "$lib/format.ts";
+  import { sportQuery } from "$lib/sport-filter.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
   import type { SportFilterValue, Zone } from "$lib/types.ts";
@@ -22,19 +23,19 @@
   const from = $derived(addDays(to, -(days - 1)));
 
   const pmc = new Resource(() => unwrap<{ date: string; ctl: number; atl: number; tsb: number; tss: number }[]>(api.analytics.pmc.$get({ query: { from, to } })));
-  const volume = new Resource(() => unwrap<{ period: string; sport: string; duration_s: number; distance_m: number }[]>(api.analytics.volume.$get({ query: { from, to, by: days > 400 ? "month" : "week" } })));
+  const volume = new Resource(() => unwrap<{ period: string; sport: string; duration_s: number; distance_m: number }[]>(api.analytics.volume.$get({ query: { from, to, by: days > 400 ? "month" : "week", ...sportQuery(sportFilter) } as never })));
   const best = new Resource(() => unwrap<{ efforts: { distance_m: number; seconds: number; activity_id: number; date: string }[]; power_curve: { seconds: number; watts: number; date: string }[] }>(api.analytics["best-efforts"].$get({ query: { from: addDays(to, -364), to, sport: bestSport } })));
-  const zones = new Resource(() => unwrap<NonNullable<Zone> & { activities: number }>(api.analytics.zones.$get({ query: { from, to, kind: zoneKind } })));
+  const zones = new Resource(() => unwrap<NonNullable<Zone> & { activities: number }>(api.analytics.zones.$get({ query: { from, to, kind: zoneKind, ...sportQuery(sportFilter) } as never })));
   const strength = new Resource(() => unwrap<{ byMuscleGroup: { group: string; sets: number; volume_kg: number }[]; byExercise: { exercise: string; sets: number; volume_kg: number; best_e1rm_kg: number | null }[]; totalVolumeKg: number }>(api.analytics.strength.$get({ query: { from, to } })));
 
   $effect(() => {
-    void [from, sync.finishedCount];
+    void [from, sportFilter, sync.finishedCount];
     void pmc.reload();
     void volume.reload();
     void strength.reload();
   });
   $effect(() => {
-    void [from, zoneKind, sync.finishedCount];
+    void [from, zoneKind, sportFilter, sync.finishedCount];
     void zones.reload();
   });
   $effect(() => {

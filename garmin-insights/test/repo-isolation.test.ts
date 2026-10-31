@@ -98,3 +98,37 @@ test("athlete settings are historised: the version valid on the day applies", ()
   assert.equal(r.athlete.at("u", "2026-06-01")!.ftp, 250);
   assert.equal(r.athlete.at("u", "2025-01-01")!.ftp, 200, "before the first version, the oldest applies");
 });
+
+test("custom sports: per user, assignment and deletion never touch the other user", () => {
+  const r = twoUsers();
+  const a = r.customSports.create("alice", "Dragon boat", ["running", "cycling"]);
+  const b = r.customSports.create("bob", "Dragon boat", []); // same name and same first id, different user
+  assert.equal(a, b);
+  assert.deepEqual(r.customSports.typesOf("alice", a), ["cycling", "running"]);
+  assert.deepEqual(r.customSports.typesOf("bob", b), []);
+  r.customSports.assign("alice", 1, a);
+  r.customSports.assign("bob", 1, b);
+  assert.equal(r.activities.get("alice", 1)!.custom_sport, "Dragon boat");
+  assert.equal(r.activities.count("bob", { customSportId: b }), 1);
+
+  r.customSports.setTypes("bob", b, ["running"]);
+  assert.deepEqual(r.customSports.typesOf("alice", a), ["cycling", "running"], "bob's change leaves alice's types alone");
+  assert.equal(r.customSports.rename("bob", a + 100, "x"), false);
+  r.customSports.rename("bob", b, "OC1");
+  assert.equal(r.customSports.idByName("alice", "OC1"), undefined);
+
+  assert.equal(r.customSports.delete("alice", a), true);
+  assert.equal(r.activities.get("alice", 1)!.custom_sport_id, null, "alice's assignment is cleared");
+  assert.equal(r.activities.get("bob", 1)!.custom_sport_id, b, "bob's stays");
+  assert.deepEqual(r.customSports.listDetailed("bob").map((s) => [s.name, s.type_keys, s.activity_count]), [["OC1", ["running"], 1]]);
+  assert.deepEqual(r.customSports.garminTypes("bob"), ["running"]);
+});
+
+test("deleteAllData keeps the custom sports (configuration) but their assignments go with the activities", () => {
+  const r = twoUsers();
+  const id = r.customSports.create("alice", "Dragon boat", []);
+  r.customSports.assign("alice", 1, id);
+  r.deleteAllData("alice");
+  assert.equal(r.customSports.list("alice").length, 1);
+  assert.equal(r.customSports.listDetailed("alice")[0]!.activity_count, 0);
+});

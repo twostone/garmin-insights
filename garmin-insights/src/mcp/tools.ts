@@ -416,4 +416,16 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       return result({ started: !running, already_running: running, last_finished_at: deps.sync.progress(uid).finishedAt });
     },
   );
+
+  server.registerTool(
+    "list_custom_sports",
+    {
+      title: "List custom sports",
+      description: "The athlete's own sports (e.g. 'Dragon boat'), each with the Garmin activity types it is based on and the number of activities assigned. Pass a name as 'custom_sport' to the other tools to filter by it.",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ custom_sports: z.array(z.object({ name: z.string(), garmin_types: z.array(z.string()), activities: z.number() })) }),
+      annotations: readOnly,
+    },
+    async () => result({ custom_sports: repos.customSports.listDetailed(uid).map((s) => ({ name: s.name, garmin_types: s.type_keys, activities: s.activity_count })) }),
+  );
 }

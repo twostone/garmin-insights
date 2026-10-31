@@ -204,3 +204,41 @@ test("delete all data needs the confirmation, removes rows and FIT files, keeps 
   assert.ok(t.repos.keys.get("alice"));
   assert.equal(t.repos.activities.count("bob"), 1);
 });
+
+test("custom sports: CRUD, duplicate name 409, assignment checks, isolation", async () => {
+  const t = setup();
+  seed(t);
+  const { as } = t;
+  const a = as("alice"), b = as("bob");
+  const created = await a.send("POST", "/custom-sports", { name: "Dragon boat", type_keys: ["running"] });
+  assert.equal(created.status, 201);
+  const sport = (await created.json()).items[0];
+  assert.equal((await a.send("POST", "/custom-sports", { name: "dragon boat" })).status, 409);
+  assert.equal((await b.send("POST", "/custom-sports", { name: "Dragon boat" })).status, 201, "names are unique per user only");
+
+  const listed = await (await a.get("/custom-sports")).json();
+  assert.deepEqual(listed.garmin_types, ["running", "strength_training"]);
+  assert.equal(listed.items.length, 1);
+
+  // Assignment: unknown activity / foreign sport -> 404; type mismatch -> 422; match -> 200 and visible in the list.
+  assert.equal((await a.send("PATCH", "/activities/999", { custom_sport_id: sport.id })).status, 404);
+  assert.equal((await a.send("PATCH", "/activities/1", { custom_sport_id: 999 })).status, 404);
+  assert.equal((await a.send("PATCH", "/activities/2", { custom_sport_id: sport.id })).status, 422);
+  assert.equal((await a.send("PATCH", "/activities/1", { custom_sport_id: sport.id })).status, 200);
+  assert.equal((await (await a.get(`/activities?custom_sport_id=${sport.id}`)).json()).total, 1);
+  assert.equal((await (await a.get("/activities/1")).json()).activity.custom_sport, "Dragon boat");
+  // Bob has a sport with the same id and an activity 1 of his own; alice's assignment did not touch it.
+  assert.equal((await (await b.get("/activities/1")).json()).activity.custom_sport, null);
+  assert.equal((await b.send("PATCH", "/activities/2", { custom_sport_id: sport.id })).status, 404);
+
+  assert.equal((await a.send("PATCH", `/custom-sports/${sport.id}`, { name: "OC1", type_keys: [] })).status, 200);
+  assert.equal((await a.send("PATCH", "/custom-sports/999", { name: "x" })).status, 404);
+  assert.equal((await a.send("PATCH", "/activities/2", { custom_sport_id: sport.id })).status, 200, "no base types: any activity fits");
+  assert.equal((await a.send("PATCH", "/activities/2", { custom_sport_id: null })).status, 200);
+
+  assert.equal((await b.send("DELETE", `/custom-sports/${sport.id}`)).status, 204);
+  assert.equal((await (await a.get("/custom-sports")).json()).items[0].name, "OC1", "bob's delete left alice's sport");
+  assert.equal((await a.send("DELETE", `/custom-sports/${sport.id}`)).status, 204);
+  assert.equal((await a.send("DELETE", `/custom-sports/${sport.id}`)).status, 404);
+  assert.equal((await (await a.get("/activities/1")).json()).activity.custom_sport_id, null);
+});

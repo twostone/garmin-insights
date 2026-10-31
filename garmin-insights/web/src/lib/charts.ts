@@ -1,10 +1,11 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { m } from "$lib/paraglide/messages.js";
-import { dateLabel, duration, KNOWN_SPORTS, num } from "./format.ts";
+import { customSportColor, dateLabel, duration, KNOWN_SPORTS, num } from "./format.ts";
 
 // ECharts options for the pages. Colours come from the page's CSS variables (canvas cannot resolve var()).
 const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
-export const sportCssColor = (sport: string) => color(`--c-${KNOWN_SPORTS.includes(sport) ? sport : "other"}`);
+// Series names that are not a Garmin-derived sport are the user's own sports.
+export const sportCssColor = (sport: string) => (KNOWN_SPORTS.includes(sport) ? color(`--c-${sport}`) : customSportColor(sport));
 
 type Pmc = { date: string; ctl: number; atl: number; tsb: number; tss: number }[];
 

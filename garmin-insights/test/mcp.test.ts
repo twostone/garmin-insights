@@ -40,7 +40,7 @@ test("tools and prompts are listed; everything but trigger_sync is read-only", a
   const tools = (await c.listTools()).tools;
   assert.deepEqual(tools.map((t) => t.name).sort(), [
     "compare_activities", "get_activity", "get_activity_samples", "get_athlete_settings", "get_best_efforts", "get_health_trends",
-    "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "trigger_sync",
+    "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "list_custom_sports", "trigger_sync",
   ]);
   for (const t of tools) {
     assert.ok(t.inputSchema, t.name);
@@ -202,10 +202,22 @@ test("over HTTP: no token -> 401 with the metadata pointer; with a token the cli
     return client;
   };
   const alice = await clientFor(tokenAlice);
-  assert.equal((await alice.listTools()).tools.length, 12);
+  assert.equal((await alice.listTools()).tools.length, 13);
   assert.equal((await call(alice, "list_activities")).structuredContent!.total, 3);
   const bob = await clientFor(tokenBob);
   assert.equal((await call(bob, "list_activities")).structuredContent!.total, 1);
   await alice.close();
   await bob.close();
+});
+
+test("list_custom_sports: name, base types and activity count; filters by name; scoped to the user", async () => {
+  const t = services();
+  const id = t.repos.customSports.create("alice", "Dragon boat", ["stand_up_paddleboarding"]);
+  t.repos.customSports.create("bob", "Bob's sport", []);
+  t.repos.customSports.assign("alice", 1, id);
+  const c = await connect(t, "alice");
+  const r = await call(c, "list_custom_sports");
+  assert.deepEqual(r.structuredContent!.custom_sports, [{ name: "Dragon boat", garmin_types: ["stand_up_paddleboarding"], activities: 1 }]);
+  assert.equal((await call(c, "list_activities", { custom_sport: "dragon boat" })).structuredContent!.total, 1);
+  assert.equal((await call(c, "list_activities", { custom_sport: "Bob's sport" })).isError, true);
 });
