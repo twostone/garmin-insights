@@ -1,7 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export type SyncKind = "activities" | "fit" | "dailies" | "sleep" | "hrv" | "zones";
+export type SyncKind = "activities" | "fit" | "dailies" | "sleep" | "hrv" | "zones" | SyncMarker;
 export const SYNC_KINDS: readonly SyncKind[] = ["activities", "fit", "dailies", "sleep", "hrv", "zones"];
+/** One-off jobs: the row's presence records that the job ran (no migration needed for a new one). Not a data kind. */
+export type SyncMarker = "multisport_backfill";
+export const isSyncMarker = (kind: SyncKind): kind is SyncMarker => kind === "multisport_backfill";
 export type SyncStateRow = {
   kind: SyncKind;
   cursor: string | null;

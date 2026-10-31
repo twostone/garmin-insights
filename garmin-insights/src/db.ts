@@ -164,6 +164,36 @@ export const MIGRATIONS: string[] = [
     tsb REAL NOT NULL,
     PRIMARY KEY (user_id, date)
   ) STRICT, WITHOUT ROWID;`,
+  // v3: the athlete's own sports (several Garmin types each, assigned by hand per activity), multisport legs (parent_id) and
+  // the heart-rate artefact cleaning results. The UPDATEs re-map existing rows to the new paddling/rowing sports; they are a
+  // snapshot of src/sport.ts at this version.
+  `CREATE TABLE custom_sports (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (user_id, id),
+    UNIQUE (user_id, name)
+  ) STRICT, WITHOUT ROWID;
+
+  CREATE TABLE custom_sport_types (
+    user_id TEXT NOT NULL,
+    custom_sport_id INTEGER NOT NULL,
+    type_key TEXT NOT NULL,
+    PRIMARY KEY (user_id, custom_sport_id, type_key),
+    FOREIGN KEY (user_id, custom_sport_id) REFERENCES custom_sports(user_id, id) ON DELETE CASCADE
+  ) STRICT, WITHOUT ROWID;
+
+  ALTER TABLE activities ADD COLUMN custom_sport_id INTEGER;
+  ALTER TABLE activities ADD COLUMN parent_id INTEGER;
+  ALTER TABLE activities ADD COLUMN is_multisport_parent INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE activities ADD COLUMN max_hr_clean REAL;
+  ALTER TABLE activities ADD COLUMN hr_artifact_s INTEGER;
+  CREATE INDEX activities_by_parent ON activities(user_id, parent_id) WHERE parent_id IS NOT NULL;
+
+  UPDATE activities SET sport = 'rowing' WHERE type_key IN ('rowing', 'rowing_v2', 'indoor_rowing');
+  UPDATE activities SET sport = 'paddling'
+  WHERE type_key LIKE 'stand\\_up\\_paddleboarding%' ESCAPE '\\' OR type_key LIKE 'kayaking%' OR type_key LIKE 'canoeing%'
+     OR type_key LIKE 'whitewater%' OR type_key LIKE 'paddling%' OR type_key LIKE 'outrigger%' OR type_key LIKE 'dragon\\_boat%' ESCAPE '\\';`,
 ];
 
 function migrate(db: DatabaseSync): void {

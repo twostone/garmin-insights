@@ -7,6 +7,7 @@ import type { Env } from "../types.ts";
 import { activityRoutes } from "./activities.ts";
 import { analyticsRoutes } from "./analytics.ts";
 import { contextRoutes } from "./context.ts";
+import { customSportRoutes } from "./custom-sports.ts";
 import { garminRoutes } from "./garmin.ts";
 import { healthRoutes } from "./health.ts";
 import { settingsRoutes } from "./settings.ts";
@@ -28,6 +29,7 @@ export function createApi(deps: ApiDeps) {
     .route("/", activityRoutes(deps))
     .route("/", analyticsRoutes(deps))
     .route("/", healthRoutes(deps))
-    .route("/", settingsRoutes(deps));
+    .route("/", settingsRoutes(deps))
+    .route("/", customSportRoutes(deps));
 }
 export type AppType = ReturnType<typeof createApi>;

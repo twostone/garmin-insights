@@ -1,11 +1,11 @@
 import { addDays, diffDays, todayLocal } from "../dates.ts";
 import { fitFromZip, type FitStore } from "../fit/store.ts";
-import { parseFit } from "../fit/parse.ts";
+import { parseFit, sessionAt, sliceSession, type ParsedFit } from "../fit/parse.ts";
 import { GarminKeyError, type GarminApi } from "../garmin/client.ts";
 import { logger } from "../log.ts";
 import type { Repos } from "../repo/index.ts";
-import type { SyncKind } from "../repo/sync-state.ts";
-import { mapActivity, mapDaily, mapHeartRateZones, mapHrv, mapSleep } from "./map.ts";
+import { isSyncMarker, type SyncKind, type SyncMarker } from "../repo/sync-state.ts";
+import { mapActivity, mapDaily, mapHeartRateZones, mapHrv, mapMultisport, mapSleep } from "./map.ts";
 
 const log = logger("sync");
 
@@ -23,7 +23,7 @@ const FIT_BATCH = 25;
 const DEFAULT_MAX_RUN_MS = 30 * 60 * 1000;
 const RESUME_DELAY_MS = 60_000;
 
-type RangeKind = Exclude<SyncKind, "fit" | "zones">;
+type RangeKind = Exclude<SyncKind, "fit" | "zones" | SyncMarker>;
 type RangeSpec = { windowDays: number; emptyStop: number };
 const RANGES: Record<RangeKind, RangeSpec> = {
   activities: { windowDays: ACTIVITY_WINDOW_DAYS, emptyStop: 8 }, // two years without a single activity ends the backfill
@@ -75,7 +75,7 @@ export function createSyncWorker(deps: SyncDeps) {
       startedAt: l.startedAt,
       finishedAt: l.finishedAt,
       error: l.error,
-      kinds: repos.syncState.all(userId).map((r) => ({
+      kinds: repos.syncState.all(userId).filter((r) => !isSyncMarker(r.kind)).map((r) => ({
         kind: r.kind,
         cursor: r.cursor,
         backfillDone: r.backfill_done === 1,
@@ -140,11 +140,51 @@ export function createSyncWorker(deps: SyncDeps) {
         if (!row) continue;
         const known = repos.activities.has(userId, row.id);
         repos.activities.upsertSummary(userId, row);
+        repos.activities.setMultisport(userId, row.id, mapMultisport(dto));
         if (!known) stored++;
       }
       if (batch.length < ACTIVITY_PAGE_SIZE) break;
     }
     return stored;
+  }
+
+  /**
+   * Activities synced before multisport support lack their legs (the list skipped children). Once per user the activity
+   * backfill starts over, so the legs of older multisport activities arrive too; the marker row keeps it from repeating.
+   */
+  function startMultisportBackfill(userId: string): void {
+    if (repos.syncState.get(userId, "multisport_backfill")) return;
+    if (repos.syncState.get(userId, "activities")) repos.syncState.save(userId, "activities", { cursor: null, backfill_done: 0 });
+    repos.syncState.save(userId, "multisport_backfill", { last_sync_at: new Date(now()).toISOString() });
+    log.info("multisport_backfill_started");
+  }
+
+  /** Gives a leg the samples, laps and sets of its session in the parent's file. False when there is nothing to take. */
+  function fillLeg(userId: string, legId: number, parent: { id: number; start_utc: string }, parentFit: ParsedFit): boolean {
+    const leg = repos.activities.get(userId, legId);
+    if (!leg) return false;
+    const session = sessionAt(parentFit.sessions, (Date.parse(leg.start_utc) - Date.parse(parent.start_utc)) / 1000);
+    if (!session) return false;
+    const detail = sliceSession(parentFit, session);
+    if (!detail.samples.length) return false;
+    repos.activities.replaceDetail(userId, legId, detail);
+    repos.activities.setFitStatus(userId, legId, "done");
+    return true;
+  }
+
+  /** A leg without a file of its own: try the parent's stored file. */
+  function fillLegFromParent(userId: string, legId: number): boolean {
+    const parentId = repos.activities.get(userId, legId)?.parent_id;
+    const parent = parentId == null ? undefined : repos.activities.get(userId, parentId);
+    const bytes = parent?.fit_status === "done" ? deps.fit.read(userId, parent.id) : null;
+    return parent && bytes ? fillLeg(userId, legId, parent, parseFit(bytes)) : false;
+  }
+
+  /** A freshly parsed parent: legs that found no file of their own earlier get their part of it. Returns how many. */
+  function fillLegsOf(userId: string, parentId: number, parentFit: ParsedFit): number {
+    const parent = repos.activities.get(userId, parentId);
+    if (!parent || parentFit.sessions.length < 2) return 0;
+    return repos.activities.legs(userId, parentId).filter((leg) => leg.fit_status === "none" && fillLeg(userId, leg.id, parent, parentFit)).length;
   }
 
   async function syncZones(userId: string, api: GarminApi): Promise<void> {
@@ -179,14 +219,17 @@ export function createSyncWorker(deps: SyncDeps) {
           const zip = await api.downloadActivityZip(id);
           const bytes = zip ? fitFromZip(zip) : null;
           if (!bytes) {
-            repos.activities.setFitStatus(userId, id, "none");
+            if (fillLegFromParent(userId, id)) {
+              processed++;
+              if (!touched || date < touched) touched = date;
+            } else repos.activities.setFitStatus(userId, id, "none");
             continue;
           }
           deps.fit.save(userId, id, bytes);
           const parsed = parseFit(bytes);
           repos.activities.replaceDetail(userId, id, { samples: parsed.samples, laps: parsed.laps, sets: parsed.sets });
           repos.activities.setFitStatus(userId, id, "done");
-          processed++;
+          processed += 1 + fillLegsOf(userId, id, parsed);
           if (!touched || date < touched) touched = date;
         } catch (e) {
           if (e instanceof GarminKeyError) throw e;
@@ -225,6 +268,7 @@ export function createSyncWorker(deps: SyncDeps) {
     try {
       await step("zones", "zones", () => syncZones(userId, api));
       await step("activities", "activities", async () => {
+        startMultisportBackfill(userId);
         touch(await syncRange(userId, "activities", (s, e) => fetchActivities(userId, api, s, e), deadline));
       });
       // Loads from the summaries are available now; the FIT detail refines them later.

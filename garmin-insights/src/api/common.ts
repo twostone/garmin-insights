@@ -14,6 +14,8 @@ export const errors = <C extends 400 | 404 | 409 | 422 | 502>(...codes: C[]) =>
 export const dateSchema = z.string().regex(DATE_RE).refine(isDate, "invalid date");
 export const sportSchema = z.enum(SPORTS as unknown as [string, ...string[]]);
 export const rangeQuery = z.object({ from: dateSchema.optional(), to: dateSchema.optional() });
+/** Restricts an analysis to one of the user's own sports. */
+export const customSportQuery = { custom_sport_id: z.coerce.number().int().positive().optional() };
 export const idParam = z.object({ id: z.coerce.number().int().positive() });
 
 /** The routes behind the listeners always have a user (the listener refuses the request otherwise). */

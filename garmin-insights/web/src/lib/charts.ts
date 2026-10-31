@@ -1,10 +1,11 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { m } from "$lib/paraglide/messages.js";
-import { dateLabel, duration, num } from "./format.ts";
+import { customSportColor, dateLabel, duration, KNOWN_SPORTS, num } from "./format.ts";
 
 // ECharts options for the pages. Colours come from the page's CSS variables (canvas cannot resolve var()).
 const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
-export const sportCssColor = (sport: string) => color(`--c-${["running", "cycling", "swimming", "strength", "walking", "hiking"].includes(sport) ? sport : "other"}`);
+// Series names that are not a Garmin-derived sport are the user's own sports.
+export const sportCssColor = (sport: string) => (KNOWN_SPORTS.includes(sport) ? color(`--c-${sport}`) : customSportColor(sport));
 
 type Pmc = { date: string; ctl: number; atl: number; tsb: number; tss: number }[];
 
@@ -47,9 +48,10 @@ export function volumeOption(rows: Volume, metric: "hours" | "km"): EChartsCoreO
 export function sportName(sport: string): string {
   const names: Record<string, () => string> = {
     running: m.sport_running, cycling: m.sport_cycling, swimming: m.sport_swimming, strength: m.sport_strength,
-    walking: m.sport_walking, hiking: m.sport_hiking, other: m.sport_other,
+    walking: m.sport_walking, hiking: m.sport_hiking, paddling: m.sport_paddling, rowing: m.sport_rowing, other: m.sport_other,
   };
-  return (names[sport] ?? names.other!)();
+  // Not a Garmin-derived sport: a name the user gave their own sport.
+  return names[sport]?.() ?? sport;
 }
 
 export type SamplePoint = { t: number; hr: number | null; power: number | null; speed: number | null; alt: number | null; cadence: number | null };
@@ -123,4 +125,97 @@ export function phaseName(phase: string): string {
     starting: m.phase_starting, zones: m.kind_zones, activities: m.kind_activities, dailies: m.kind_dailies, sleep: m.kind_sleep, hrv: m.kind_hrv, fit: m.kind_fit,
   };
   return (names[phase] ?? m.phase_starting)();
+}
+
+/**
+ * Multisport: shades each leg's time span in a time-series option from seriesOption (markArea on the first series, usually
+ * the heart rate). The x axis is a category axis of sample times, so the spans are given as indices of the nearest samples.
+ */
+export function withLegAreas(option: EChartsCoreOption, samples: SamplePoint[], legs: { start_offset_s: number; duration_s: number | null; sport: string; label: string }[]): EChartsCoreOption {
+  const series = (option.series as Record<string, unknown>[] | undefined) ?? [];
+  if (!legs.length || !series.length || !samples.length) return option;
+  const indexAt = (t: number) => {
+    const i = samples.findIndex((s) => s.t >= t);
+    return i < 0 ? samples.length - 1 : i;
+  };
+  const areas = legs.map((l) => [
+    { xAxis: indexAt(l.start_offset_s), name: l.label, itemStyle: { color: sportCssColor(l.sport), opacity: 0.12 } },
+    { xAxis: l.duration_s === null ? samples.length - 1 : indexAt(l.start_offset_s + l.duration_s) },
+  ]);
+  const [first, ...rest] = series;
+  return { ...option, series: [{ ...first, markArea: { silent: true, label: { color: color("--muted"), fontSize: 11 }, data: areas } }, ...rest] };
+}
+
+export type WeekRow = { week: string; acwr: number | null; sport_mix: { sport: string; duration_s: number }[] };
+
+// The ACWR range that counts as the sweet spot, drawn as two guide lines (same numbers as ACWR_SWEET_SPOT in the backend).
+const ACWR_SWEET_SPOT = [0.8, 1.3] as const;
+
+/** Weekly stacked bars of training time per sport (hours) with the ACWR as a line on a second axis. */
+export function weeklyBalanceOption(rows: WeekRow[]): EChartsCoreOption {
+  const sports = [...new Set(rows.flatMap((r) => r.sport_mix.map((s) => s.sport)))].sort();
+  const hours = (r: WeekRow, sport: string) => Math.round((r.sport_mix.find((s) => s.sport === sport)?.duration_s ?? 0) / 360) / 10;
+  const accent = color("--accent");
+  const guide = { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: color("--muted"), type: "dashed" } };
+  return {
+    legend: { data: [...sports.map((s) => sportName(s)), m.weekly_acwr()] },
+    xAxis: { type: "category", data: rows.map((r) => r.week), axisLabel: { formatter: (v: string) => dateLabel(v, { day: "numeric", month: "short" }) } },
+    yAxis: [
+      { type: "value", name: "h", splitLine: { lineStyle: { color: color("--border") } } },
+      { type: "value", name: m.weekly_acwr(), min: 0, splitLine: { show: false } },
+    ],
+    series: [
+      ...sports.map((sport) => ({ name: sportName(sport), type: "bar", stack: "time", itemStyle: { color: sportCssColor(sport) }, data: rows.map((r) => hours(r, sport)) })),
+      {
+        name: m.weekly_acwr(), type: "line", yAxisIndex: 1, connectNulls: false, data: rows.map((r) => r.acwr), lineStyle: { color: accent, width: 3 }, itemStyle: { color: accent },
+        markLine: { ...guide, data: ACWR_SWEET_SPOT.map((yAxis) => ({ yAxis })) },
+      },
+    ],
+  };
+}
+
+export type PaddlingWeek = { week: string; group: string; distance_m: number; avg_speed_kmh: number | null; avg_efficiency: number | null };
+
+const ROUND_EFFICIENCY = 1000;
+
+/** Weekly paddling: distance as bars (stacked per own sport), average speed and efficiency as lines on their own axes. */
+export function paddlingOption(rows: PaddlingWeek[]): EChartsCoreOption {
+  const weeks = [...new Set(rows.map((r) => r.week))].sort();
+  const groups = [...new Set(rows.map((r) => r.group))].sort();
+  const cell = (week: string, group: string) => rows.find((r) => r.week === week && r.group === group);
+  const grid = { lineStyle: { color: color("--border") } };
+  const lineOf = (name: string, yAxisIndex: number, line: "solid" | "dashed", pick: (r: PaddlingWeek) => number | null) =>
+    groups.map((group) => ({
+      name: `${name} · ${sportName(group)}`,
+      type: "line",
+      yAxisIndex,
+      connectNulls: true,
+      lineStyle: { color: sportCssColor(group), type: line, width: 2 },
+      itemStyle: { color: sportCssColor(group) },
+      data: weeks.map((w) => {
+        const r = cell(w, group);
+        return r ? pick(r) : null;
+      }),
+    }));
+  const round = (v: number | null, f: number) => (v === null ? null : Math.round(v * f) / f);
+  return {
+    legend: { data: [m.paddling_distance(), ...groups.map((g) => `${m.paddling_speed()} · ${sportName(g)}`), ...groups.map((g) => `${m.paddling_efficiency()} · ${sportName(g)}`)], type: "scroll" },
+    xAxis: { type: "category", data: weeks, axisLabel: { formatter: (v: string) => dateLabel(v, { day: "numeric", month: "short" }) } },
+    yAxis: [
+      { type: "value", name: m.paddling_unit_km(), splitLine: grid },
+      { type: "value", name: m.paddling_unit_kmh(), splitLine: { show: false } },
+      { type: "value", show: false, scale: true },
+    ],
+    series: [
+      ...groups.map((group) => ({
+        name: groups.length === 1 ? m.paddling_distance() : `${m.paddling_distance()} · ${sportName(group)}`,
+        type: "bar",
+        stack: "distance",
+        itemStyle: { color: sportCssColor(group), opacity: 0.45 },
+        data: weeks.map((w) => round((cell(w, group)?.distance_m ?? 0) / 1000, 10)),
+      })),
+      ...lineOf(m.paddling_speed(), 1, "solid", (r) => round(r.avg_speed_kmh, 10)),
+      ...lineOf(m.paddling_efficiency(), 2, "dashed", (r) => round(r.avg_efficiency, ROUND_EFFICIENCY)),
+    ],
+  };
 }

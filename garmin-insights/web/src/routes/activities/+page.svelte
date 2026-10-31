@@ -1,17 +1,17 @@
 <script lang="ts">
   import { m } from "$lib/paraglide/messages.js";
   import { api, unwrap } from "$lib/api.ts";
-  import { sportName } from "$lib/charts.ts";
   import ActivityRow from "$lib/components/ActivityRow.svelte";
+  import SportFilter from "$lib/components/SportFilter.svelte";
   import { addDays, dateLabel, duration, km, today } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
-  import type { ActivityLite } from "$lib/types.ts";
+  import { sportQuery } from "$lib/sport-filter.ts";
+  import type { ActivityLite, SportFilterValue } from "$lib/types.ts";
 
-  const SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "other"] as const;
   const PAGE = 30;
 
-  let sport = $state<string | null>(null);
+  let sportFilter = $state<SportFilterValue>({});
   let from = $state("");
   let to = $state("");
   let view = $state<"list" | "calendar">("list");
@@ -21,7 +21,7 @@
 
   const query = (offset: number) => ({
     limit: String(PAGE), offset: String(offset),
-    ...(sport ? { sport } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}),
+    ...sportQuery(sportFilter), ...(from ? { from } : {}), ...(to ? { to } : {}),
   });
   const list = new Resource(async () => {
     const r = await unwrap<{ items: ActivityLite[]; total: number }>(api.activities.$get({ query: query(0) as never }));
@@ -73,12 +73,7 @@
 <h1>{m.nav_activities()}</h1>
 
 <div class="card stack">
-  <div class="chips" role="group" aria-label={m.filter_sport()}>
-    <button type="button" class="chip" aria-pressed={sport === null} onclick={() => ((sport = null), filter())}>{m.filter_all()}</button>
-    {#each SPORTS as s (s)}
-      <button type="button" class="chip" aria-pressed={sport === s} onclick={() => ((sport = s), filter())}>{sportName(s)}</button>
-    {/each}
-  </div>
+  <SportFilter bind:value={sportFilter} onchange={filter} />
   <div class="grid cols-2">
     <div><label for="from">{m.filter_from()}</label><input id="from" type="date" bind:value={from} onchange={filter} /></div>
     <div><label for="to">{m.filter_to()}</label><input id="to" type="date" bind:value={to} onchange={filter} /></div>

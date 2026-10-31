@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { BarChart, LineChart } from "echarts/charts";
-  import { DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
+  import { DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
   import * as echarts from "echarts/core";
   import { CanvasRenderer } from "echarts/renderers";
   import type { EChartsCoreOption } from "echarts/core";
 
   // ECharts, tree-shaken to what the pages use: line and bar series on a grid, tooltip, legend, zoom and mark lines.
-  echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, CanvasRenderer]);
+  echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, MarkAreaComponent, CanvasRenderer]);
 
   let { option, height = 260, label }: { option: EChartsCoreOption; height?: number; label: string } = $props();
   let el: HTMLDivElement;

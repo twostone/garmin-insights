@@ -1,11 +1,13 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { downsample } from "../analytics/downsample.ts";
+import { legOverview, parentHr } from "../analytics/multisport.ts";
 import { activityAnalysis, parseSummary } from "../analytics/queries.ts";
+import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import type { FitStore } from "../fit/store.ts";
 import type { Repos } from "../repo/index.ts";
 import type { Env } from "../types.ts";
-import { dateSchema, errors, idParam, json, sportSchema, userOf } from "./common.ts";
+import { customSportQuery, dateSchema, errors, idParam, json, sportSchema, userOf } from "./common.ts";
 
 const activitySchema = z.object({
   id: z.number(), start_utc: z.string(), date: z.string(), name: z.string().nullable(), type_key: z.string(), sport: z.string(),
@@ -15,6 +17,8 @@ const activitySchema = z.object({
   te_aerobic: z.number().nullable(), te_anaerobic: z.number().nullable(), start_lat: z.number().nullable(), start_lon: z.number().nullable(),
   total_sets: z.number().nullable(), total_reps: z.number().nullable(),
   fit_status: z.enum(["pending", "done", "none", "failed"]), trimp: z.number().nullable(), tss: z.number().nullable(), tss_method: z.string().nullable(),
+  custom_sport_id: z.number().nullable(), custom_sport: z.string().nullable(), group_key: z.string(),
+  parent_id: z.number().nullable(), is_multisport_parent: z.number(), max_hr_clean: z.number().nullable(), hr_artifact_s: z.number().nullable(),
 });
 
 const sampleSchema = z.object({
@@ -30,7 +34,15 @@ const setSchema = z.object({
   reps: z.number().nullable(), weight_kg: z.number().nullable(),
 });
 const zoneSchema = z.object({ kind: z.enum(["hr", "power", "pace"]), floors: z.array(z.number()), below: z.number(), seconds: z.array(z.number()), source: z.enum(["samples", "garmin_summary"]) }).nullable();
+const paddlingSchema = z.object({
+  moving_s: z.number(), avg_speed_kmh: z.number(), pace_s_per_500m: z.number(), max_speed_1min_kmh: z.number().nullable(), max_speed_5min_kmh: z.number().nullable(),
+  avg_stroke_rate: z.number().nullable(), distance_per_stroke_m: z.number().nullable(), avg_hr: z.number().nullable(), efficiency: z.number().nullable(),
+});
 const exerciseSchema = z.object({ exercise: z.string(), muscle_group: z.string(), sets: z.number(), reps: z.number(), volume_kg: z.number(), max_weight_kg: z.number().nullable(), best_e1rm_kg: z.number().nullable() });
+
+const legSchema = z.object({
+  id: z.number(), sport: z.string(), garmin_type: z.string(), start_offset_s: z.number(), duration_s: z.number().nullable(), avg_hr: z.number().nullable(), tss: z.number().nullable(),
+});
 
 const MAX_SAMPLES = 5000;
 const DEFAULT_SAMPLES = 1500;
@@ -44,7 +56,7 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
         path: "/activities",
         request: {
           query: z.object({
-            sport: sportSchema.optional(), from: dateSchema.optional(), to: dateSchema.optional(),
+            sport: sportSchema.optional(), ...customSportQuery, from: dateSchema.optional(), to: dateSchema.optional(),
             limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0),
             order: z.enum(["asc", "desc"]).default("desc"),
           }),
@@ -53,7 +65,7 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
       }),
       (c) => {
         const q = c.req.valid("query");
-        const f = { sport: q.sport as never, from: q.from, to: q.to };
+        const f = { sport: q.sport as never, customSportId: q.custom_sport_id, from: q.from, to: q.to, topLevel: true };
         const id = userOf(c).id;
         return c.json({ items: repos.activities.list(id, { ...f, limit: q.limit, offset: q.offset, order: q.order }), total: repos.activities.count(id, f) }, 200);
       },
@@ -75,13 +87,19 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
         method: "get",
         path: "/activities/{id}",
         request: { params: idParam },
-        responses: { 200: json(z.object({ activity: activitySchema, summary: z.record(z.string(), z.unknown()) })), ...errors(404) },
+        responses: { 200: json(z.object({ activity: activitySchema, summary: z.record(z.string(), z.unknown()), legs: z.array(legSchema) })), ...errors(404) },
       }),
       (c) => {
         const user = userOf(c).id;
         const activity = repos.activities.get(user, c.req.valid("param").id);
         if (!activity) return c.json({ error: "not_found" }, 404);
-        return c.json({ activity, summary: parseSummary(repos.activities.summaryJson(user, activity.id)) }, 200);
+        // Multisport: the legs, and the parent's average and cleaned max HR from them.
+        const legs = repos.activities.legs(user, activity.id);
+        return c.json({
+          activity: parentHr(activity, legs),
+          summary: parseSummary(repos.activities.summaryJson(user, activity.id)),
+          legs: legOverview(activity, legs),
+        }, 200);
       },
     )
     .openapi(
@@ -93,6 +111,8 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
           query: z.object({
             from: z.coerce.number().int().min(0).optional(), to: z.coerce.number().int().min(0).optional(),
             max_points: z.coerce.number().int().min(10).max(MAX_SAMPLES).default(DEFAULT_SAMPLES),
+            // Heart-rate artifacts are null (a gap in the chart) unless the raw recording is asked for.
+            clean_hr: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
           }),
         },
         responses: { 200: json(z.object({ total: z.number(), samples: z.array(sampleSchema) })), ...errors(404) },
@@ -101,8 +121,10 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
         const user = userOf(c).id;
         const { id } = c.req.valid("param");
         const q = c.req.valid("query");
-        if (!repos.activities.has(user, id)) return c.json({ error: "not_found" }, 404);
-        const rows = repos.activities.samples(user, id, { from: q.from, to: q.to });
+        const activity = repos.activities.get(user, id);
+        if (!activity) return c.json({ error: "not_found" }, 404);
+        const win = { from: q.from, to: q.to };
+        const rows = q.clean_hr ? analysisSamples(repos, user, activity, win) : repos.activities.samples(user, id, win);
         return c.json({ total: rows.length, samples: downsample(rows, q.max_points) }, 200);
       },
     )
@@ -147,6 +169,7 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
             decoupling_pct: z.number().nullable(),
             best_efforts: z.array(z.object({ distance: z.number(), seconds: z.number(), startT: z.number() })),
             mean_max_power: z.array(z.object({ seconds: z.number(), watts: z.number() })),
+            paddling: paddlingSchema.optional(),
           })),
           ...errors(404),
         },

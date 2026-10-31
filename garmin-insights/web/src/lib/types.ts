@@ -1,13 +1,28 @@
 // Shapes the pages read from the API. The server types (hc<AppType>) are used for requests; responses are narrowed here to
 // what the UI needs, so the pages do not depend on every column.
-export type ActivityLite = { id: number; date: string; name: string | null; sport: string; distance_m: number | null; duration_s: number | null; tss: number | null };
+export type ActivityLite = { id: number; date: string; name: string | null; sport: string; custom_sport?: string | null; distance_m: number | null; duration_s: number | null; tss: number | null };
 export type ActivityFull = ActivityLite & {
-  start_utc: string; type_key: string; moving_s: number | null; elevation_gain_m: number | null; avg_hr: number | null; max_hr: number | null;
+  start_utc: string; type_key: string; custom_sport_id: number | null; moving_s: number | null; elevation_gain_m: number | null; avg_hr: number | null; max_hr: number | null;
   avg_power: number | null; norm_power: number | null; avg_speed: number | null; max_speed: number | null; calories: number | null; vo2max: number | null;
   te_aerobic: number | null; te_anaerobic: number | null; start_lat: number | null; start_lon: number | null; total_sets: number | null; total_reps: number | null;
   fit_status: "pending" | "done" | "none" | "failed"; trimp: number | null; tss_method: string | null;
+  max_hr_clean: number | null; hr_artifact_s: number | null;
+  /** Multisport: the parent of a leg, null otherwise. */
+  parent_id: number | null;
 };
+/** One leg of a multisport activity; `start_offset_s` counts from the parent's start. */
+export type Leg = { id: number; sport: string; garmin_type: string; start_offset_s: number; duration_s: number | null; avg_hr: number | null; tss: number | null };
 export type Sample = { t: number; lat: number | null; lon: number | null; alt: number | null; hr: number | null; power: number | null; cadence: number | null; speed: number | null; dist: number | null; temp: number | null };
 export type Lap = { idx: number; start_s: number | null; duration_s: number | null; distance_m: number | null; avg_hr: number | null; max_hr: number | null; avg_power: number | null; avg_speed: number | null; avg_cadence: number | null; ascent_m: number | null };
 export type Zone = { kind: "hr" | "power" | "pace"; floors: number[]; below: number; seconds: number[]; source: "samples" | "garmin_summary" } | null;
 export type SetRow = { idx: number; start_s: number | null; duration_s: number | null; set_type: "active" | "rest"; exercise: string | null; reps: number | null; weight_kg: number | null };
+/** Which activities a page's analyses look at: a Garmin-derived sport, one of the user's own sports, or all (both unset). */
+export type SportFilterValue = { sport?: string; customSportId?: number };
+export type CustomSportItem = { id: number; name: string; type_keys: string[]; activity_count: number };
+export type CustomSportList = { items: CustomSportItem[]; garmin_types: string[] };
+
+/** Paddling metrics of one activity (GET /activities/{id}/analysis). */
+export type Paddling = {
+  moving_s: number; avg_speed_kmh: number; pace_s_per_500m: number; max_speed_1min_kmh: number | null; max_speed_5min_kmh: number | null;
+  avg_stroke_rate: number | null; distance_per_stroke_m: number | null; avg_hr: number | null; efficiency: number | null;
+};

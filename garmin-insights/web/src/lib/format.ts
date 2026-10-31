@@ -24,6 +24,8 @@ export function pace(speedMps: number | null | undefined): string {
   return `${duration(1000 / speedMps)} /km`;
 }
 export const paceFromSecPerKm = (s: number | null | undefined) => (s ? `${duration(s)} /km` : "–");
+/** Seconds per 500 m (paddling pace) -> "3:20 /500 m". */
+export const pacePer500m = (s: number | null | undefined) => (s ? `${duration(s)} /500 m` : "–");
 export const kmh = (mps: number | null | undefined) => (mps === null || mps === undefined ? "–" : `${num(mps * 3.6, 1)} km/h`);
 
 export function dateLabel(date: string, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }): string {
@@ -45,4 +47,17 @@ export function parseDuration(text: string): number | null {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
-export const sportColor = (sport: string) => `var(--c-${["running", "cycling", "swimming", "strength", "walking", "hiking"].includes(sport) ? sport : "other"})`;
+/** The Garmin-derived sports with their own colour and name; anything else (e.g. a user-defined sport) is shown as is. */
+export const KNOWN_SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "paddling", "rowing", "other"];
+export const sportColor = (sport: string) => `var(--c-${KNOWN_SPORTS.includes(sport) ? sport : "other"})`;
+
+// Own sports have no CSS variable; a small palette (readable on light and dark) keeps them apart in stacked charts and lists.
+const CUSTOM_PALETTE = ["#e64980", "#2f9e44", "#f08c00", "#4263eb", "#ae3ec9", "#099268", "#c2255c", "#5f3dc4"];
+/** Stable colour per name: the same sport keeps its colour across pages. */
+export function customSportColor(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
+  return CUSTOM_PALETTE[h % CUSTOM_PALETTE.length]!;
+}
+/** CSS colour of a Garmin-derived sport, or of an own sport when `custom` is set. */
+export const anySportColor = (sport: string, custom?: string | null) => (custom ? customSportColor(custom) : sportColor(sport));

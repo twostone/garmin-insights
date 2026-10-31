@@ -1,15 +1,17 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { bestEffortsInRange, defaultRange, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import { bestEffortsInRange, defaultRange, paddlingTrends, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
 import type { Repos } from "../repo/index.ts";
 import type { Env } from "../types.ts";
-import { errors, json, MAX_RANGE_DAYS, rangeQuery, sportSchema, userOf } from "./common.ts";
+import { todayLocal } from "../dates.ts";
+import { customSportQuery, dateSchema, errors, json, MAX_RANGE_DAYS, rangeQuery, sportSchema, userOf } from "./common.ts";
 
 const DEFAULT_PMC_DAYS = 180;
 const DEFAULT_RANGE_DAYS = 90;
 
+const readinessStatus = z.enum(["good", "watch", "poor", "unknown"]);
 const trendMetric = z.object({ avg7: z.number().nullable(), baseline28: z.number().nullable(), deltaVsBaseline: z.number().nullable() });
 
-export function analyticsRoutes(deps: { repos: Repos }) {
+export function analyticsRoutes(deps: { repos: Repos; today?: () => string }) {
   const { repos } = deps;
   const tooLong = (r: { from: string; to: string }) => rangeDays(r) > MAX_RANGE_DAYS || rangeDays(r) < 1;
   return new OpenAPIHono<Env>()
@@ -31,7 +33,7 @@ export function analyticsRoutes(deps: { repos: Repos }) {
       createRoute({
         method: "get",
         path: "/analytics/zones",
-        request: { query: rangeQuery.extend({ kind: z.enum(["hr", "power", "pace"]).default("hr"), sport: sportSchema.optional() }) },
+        request: { query: rangeQuery.extend({ kind: z.enum(["hr", "power", "pace"]).default("hr"), sport: sportSchema.optional(), ...customSportQuery }) },
         responses: {
           200: json(z.object({ kind: z.enum(["hr", "power", "pace"]), activities: z.number(), floors: z.array(z.number()), below: z.number(), seconds: z.array(z.number()), source: z.enum(["samples", "garmin_summary"]) })),
           ...errors(400),
@@ -41,14 +43,14 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         const q = c.req.valid("query");
         const r = defaultRange(q.from, q.to, DEFAULT_RANGE_DAYS);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
-        return c.json(zoneDistribution(repos, userOf(c).id, { ...r, kind: q.kind, sport: q.sport as never }), 200);
+        return c.json(zoneDistribution(repos, userOf(c).id, { ...r, kind: q.kind, sport: q.sport as never, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(
       createRoute({
         method: "get",
         path: "/analytics/volume",
-        request: { query: rangeQuery.extend({ by: z.enum(["week", "month"]).default("week"), sport: sportSchema.optional() }) },
+        request: { query: rangeQuery.extend({ by: z.enum(["week", "month"]).default("week"), sport: sportSchema.optional(), ...customSportQuery }) },
         responses: {
           200: json(z.array(z.object({ period: z.string(), sport: z.string(), count: z.number(), distance_m: z.number(), duration_s: z.number(), elevation_gain_m: z.number(), tss: z.number(), trimp: z.number() }))),
           ...errors(400),
@@ -58,7 +60,28 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         const q = c.req.valid("query");
         const r = defaultRange(q.from, q.to, DEFAULT_PMC_DAYS);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
-        return c.json(volumeInRange(repos, userOf(c).id, { ...r, by: q.by, sport: q.sport as never }), 200);
+        return c.json(volumeInRange(repos, userOf(c).id, { ...r, by: q.by, sport: q.sport as never, customSportId: q.custom_sport_id }), 200);
+      },
+    )
+    .openapi(
+      createRoute({
+        method: "get",
+        path: "/analytics/weekly",
+        request: { query: rangeQuery.extend({ sport: sportSchema.optional(), ...customSportQuery }) },
+        responses: {
+          200: json(z.array(z.object({
+            week: z.string(), load: z.number(), acwr: z.number().nullable(), monotony: z.number().nullable(), strain: z.number().nullable(),
+            intensity_pct: z.object({ easy: z.number(), moderate: z.number(), hard: z.number() }).nullable(),
+            sport_mix: z.array(z.object({ sport: z.string(), duration_s: z.number(), tss: z.number() })),
+          }))),
+          ...errors(400),
+        },
+      }),
+      (c) => {
+        const q = c.req.valid("query");
+        const r = defaultRange(q.from, q.to, DEFAULT_RANGE_DAYS);
+        if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
+        return c.json(weeklyBalance(repos, userOf(c).id, { ...r, sport: q.sport as never, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(
@@ -86,7 +109,7 @@ export function analyticsRoutes(deps: { repos: Repos }) {
       createRoute({
         method: "get",
         path: "/analytics/best-efforts",
-        request: { query: rangeQuery.extend({ sport: z.enum(["running", "cycling"]).default("running") }) },
+        request: { query: rangeQuery.extend({ sport: z.enum(["running", "cycling"]).default("running"), ...customSportQuery }) },
         responses: {
           200: json(z.object({
             sport: z.enum(["running", "cycling"]),
@@ -100,7 +123,24 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         const q = c.req.valid("query");
         const r = defaultRange(q.from, q.to, 365);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
-        return c.json(bestEffortsInRange(repos, userOf(c).id, { ...r, sport: q.sport }), 200);
+        return c.json(bestEffortsInRange(repos, userOf(c).id, { ...r, sport: q.sport, customSportId: q.custom_sport_id }), 200);
+      },
+    )
+    .openapi(
+      createRoute({
+        method: "get",
+        path: "/analytics/paddling",
+        request: { query: rangeQuery.extend({ ...customSportQuery }) },
+        responses: {
+          200: json(z.array(z.object({ week: z.string(), group: z.string(), count: z.number(), distance_m: z.number(), duration_s: z.number(), avg_speed_kmh: z.number().nullable(), avg_efficiency: z.number().nullable() }))),
+          ...errors(400),
+        },
+      }),
+      (c) => {
+        const q = c.req.valid("query");
+        const r = defaultRange(q.from, q.to, DEFAULT_PMC_DAYS);
+        if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
+        return c.json(paddlingTrends(repos, userOf(c).id, { ...r, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(
@@ -124,5 +164,19 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
         return c.json(strengthInRange(repos, userOf(c).id, r), 200);
       },
+    )
+    .openapi(
+      createRoute({
+        method: "get",
+        path: "/analytics/readiness",
+        request: { query: z.object({ date: dateSchema.optional() }) },
+        responses: {
+          200: json(z.object({
+            date: z.string(), status: readinessStatus,
+            components: z.array(z.object({ key: z.enum(["hrv", "resting_hr", "sleep", "body_battery", "tsb"]), value: z.number().nullable(), reference: z.number().nullable(), status: readinessStatus, reason: z.string() })),
+          })),
+        },
+      }),
+      (c) => c.json(readinessOn(repos, userOf(c).id, c.req.valid("query").date ?? (deps.today ?? todayLocal)()), 200),
     );
 }

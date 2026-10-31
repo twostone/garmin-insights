@@ -6,7 +6,8 @@ import type { Env } from "../src/types.ts";
 import type { GarminApi } from "../src/garmin/client.ts";
 import { jwt, testApi } from "./helpers.ts";
 import { runFit } from "./fit-fixtures.ts";
-import { seedTraining as seed } from "./seed.ts";
+import { openDb } from "../src/db.ts";
+import { seedPaddling, seedTraining as seed } from "./seed.ts";
 
 // A Garmin token endpoint stand-in for the key check: only the key "good" is accepted.
 const garminFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -23,8 +24,8 @@ const noGarmin = (): GarminApi => ({
   heartRateZones: async () => [],
 });
 
-function setup() {
-  const t = testApi({ garminClient: { fetch: garminFetch, minIntervalMs: 0 }, garmin: noGarmin, today: () => "2026-10-30" });
+function setup(db = openDb(":memory:")) {
+  const t = testApi({ db, garminClient: { fetch: garminFetch, minIntervalMs: 0 }, garmin: noGarmin, today: () => "2026-10-30" });
   const app = new Hono<Env>();
   // Tests pick the user per request with a header, standing in for the listeners.
   app.use("*", async (c, next) => {
@@ -117,6 +118,21 @@ test("samples are downsampled to max_points and windowed; laps; FIT download ret
   assert.equal((await a.get("/activities/1/samples?max_points=5")).status, 400);
 });
 
+test("samples: heart-rate artifacts are a gap (null) unless clean_hr=false; the detail carries the cleaning result", async () => {
+  const t = setup();
+  seed(t);
+  const samples = t.repos.activities.samples("alice", 1).map((s) => (s.t === 300 ? { ...s, hr: 201 } : s));
+  t.repos.activities.replaceDetail("alice", 1, { samples, laps: [], sets: [] });
+  t.repos.activities.setHrClean("alice", 1, { max_hr_clean: 160, hr_artifact_s: 1 });
+  const a = t.as("alice");
+  const hr = async (q: string) => (await (await a.get(`/activities/1/samples?from=299&to=301${q}`)).json()).samples.map((s: { hr: number | null }) => s.hr);
+  assert.deepEqual(await hr(""), [150, null, 150]);
+  assert.deepEqual(await hr("&clean_hr=false"), [150, 201, 150]);
+  assert.equal((await a.get("/activities/1/samples?clean_hr=maybe")).status, 400);
+  const detail = (await (await a.get("/activities/1")).json()).activity;
+  assert.deepEqual([detail.max_hr_clean, detail.hr_artifact_s], [160, 1]);
+});
+
 test("strength sets and the analysis of a run (zones from samples, decoupling, best efforts)", async () => {
   const t = setup();
   seed(t);
@@ -168,6 +184,21 @@ test("health ranges per user", async () => {
   assert.equal(trends.points[19].restingHr, 50);
 });
 
+test("readiness: rated per day from the user's own data, default is today", async () => {
+  const t = setup();
+  t.repos.users.upsert({ id: "alice", name: "a" });
+  t.repos.health.dailies.upsertMany("alice", [{ date: "2026-10-20", steps: 5000, resting_hr: 50, min_hr: 45, max_hr: 160, stress_avg: 25, body_battery_high: 90, body_battery_low: 12, active_minutes: 20 }]);
+  t.repos.health.hrv.upsertMany("alice", [{ date: "2026-10-20", last_night_avg: 40, weekly_avg: 58, last_night_5min_high: 80, baseline_low: 50, baseline_high: 70, status: "LOW" }]);
+  const r = await (await t.as("alice").get("/analytics/readiness?date=2026-10-20")).json();
+  assert.equal(r.date, "2026-10-20");
+  assert.equal(r.status, "poor");
+  assert.equal(r.components.find((c: { key: string }) => c.key === "hrv").status, "poor");
+  assert.equal(r.components.find((c: { key: string }) => c.key === "sleep").status, "unknown");
+  assert.equal((await (await t.as("bob").get("/analytics/readiness?date=2026-10-20")).json()).status, "unknown");
+  assert.equal((await t.as("alice").get("/analytics/readiness")).status, 200);
+  assert.equal((await t.as("alice").get("/analytics/readiness?date=nope")).status, 400);
+});
+
 test("settings: language, athlete thresholds (historised, recompute loads), delete a version", async () => {
   const t = setup();
   seed(t);
@@ -203,4 +234,85 @@ test("delete all data needs the confirmation, removes rows and FIT files, keeps 
   assert.equal(t.fit.has("alice", 1), false);
   assert.ok(t.repos.keys.get("alice"));
   assert.equal(t.repos.activities.count("bob"), 1);
+});
+
+test("custom sports: CRUD, duplicate name 409, assignment checks, isolation", async () => {
+  const t = setup();
+  seed(t);
+  const { as } = t;
+  const a = as("alice"), b = as("bob");
+  const created = await a.send("POST", "/custom-sports", { name: "Dragon boat", type_keys: ["running"] });
+  assert.equal(created.status, 201);
+  const sport = (await created.json()).items[0];
+  assert.equal((await a.send("POST", "/custom-sports", { name: "dragon boat" })).status, 409);
+  assert.equal((await b.send("POST", "/custom-sports", { name: "Dragon boat" })).status, 201, "names are unique per user only");
+
+  const listed = await (await a.get("/custom-sports")).json();
+  assert.deepEqual(listed.garmin_types, ["running", "strength_training"]);
+  assert.equal(listed.items.length, 1);
+
+  // Assignment: unknown activity / foreign sport -> 404; type mismatch -> 422; match -> 200 and visible in the list.
+  assert.equal((await a.send("PATCH", "/activities/999", { custom_sport_id: sport.id })).status, 404);
+  assert.equal((await a.send("PATCH", "/activities/1", { custom_sport_id: 999 })).status, 404);
+  assert.equal((await a.send("PATCH", "/activities/2", { custom_sport_id: sport.id })).status, 422);
+  assert.equal((await a.send("PATCH", "/activities/1", { custom_sport_id: sport.id })).status, 200);
+  assert.equal((await (await a.get(`/activities?custom_sport_id=${sport.id}`)).json()).total, 1);
+  assert.equal((await (await a.get("/activities/1")).json()).activity.custom_sport, "Dragon boat");
+  // Bob has a sport with the same id and an activity 1 of his own; alice's assignment did not touch it.
+  assert.equal((await (await b.get("/activities/1")).json()).activity.custom_sport, null);
+  assert.equal((await b.send("PATCH", "/activities/2", { custom_sport_id: sport.id })).status, 404);
+
+  assert.equal((await a.send("PATCH", `/custom-sports/${sport.id}`, { name: "OC1", type_keys: [] })).status, 200);
+  assert.equal((await a.send("PATCH", "/custom-sports/999", { name: "x" })).status, 404);
+  assert.equal((await a.send("PATCH", "/activities/2", { custom_sport_id: sport.id })).status, 200, "no base types: any activity fits");
+  assert.equal((await a.send("PATCH", "/activities/2", { custom_sport_id: null })).status, 200);
+
+  assert.equal((await b.send("DELETE", `/custom-sports/${sport.id}`)).status, 204);
+  assert.equal((await (await a.get("/custom-sports")).json()).items[0].name, "OC1", "bob's delete left alice's sport");
+  assert.equal((await a.send("DELETE", `/custom-sports/${sport.id}`)).status, 204);
+  assert.equal((await a.send("DELETE", `/custom-sports/${sport.id}`)).status, 404);
+  assert.equal((await (await a.get("/activities/1")).json()).activity.custom_sport_id, null);
+});
+
+test("analytics: weekly balance per calendar week, with sport filter and per user", async () => {
+  const t = setup();
+  seed(t);
+  for (const [id, tss] of [[1, 50], [2, 20], [3, 30]] as const) t.repos.activities.setLoad("alice", id, { trimp: null, tss, tss_method: "test" });
+  const a = t.as("alice");
+  const weeks = await (await a.get("/analytics/weekly?from=2026-09-28&to=2026-10-11")).json();
+  assert.deepEqual(weeks.map((w: { week: string; load: number }) => [w.week, w.load]), [["2026-09-28", 50], ["2026-10-05", 50]]);
+  assert.deepEqual(weeks[1].sport_mix.map((s: { sport: string }) => s.sport).sort(), ["running", "strength"]);
+  for (const w of weeks) assert.equal(w.intensity_pct.easy + w.intensity_pct.moderate + w.intensity_pct.hard > 99.9, true, "FIT files give heart-rate zones; shares add up to 100");
+  assert.equal((await (await t.as("bob").get("/analytics/weekly?from=2026-09-28&to=2026-10-11")).json())[1].intensity_pct, null);
+  const strength = await (await a.get("/analytics/weekly?from=2026-09-28&to=2026-10-11&sport=strength")).json();
+  assert.deepEqual(strength.map((w: { load: number }) => w.load), [0, 20]);
+  assert.equal((await a.get("/analytics/weekly?from=2026-10-11&to=2026-10-01")).status, 400);
+  assert.equal((await (await t.as("bob").get("/analytics/weekly?from=2026-09-28&to=2026-10-11")).json())[0].load, 0);
+});
+
+test("paddling: analysis block on the activity and weekly trends per own sport", async () => {
+  const db = openDb(":memory:");
+  const t = setup(db);
+  seedPaddling(t, db);
+  const a = t.as("alice");
+  const an = await (await a.get("/activities/30/analysis")).json();
+  assert.equal(an.paddling.moving_s, 1200);
+  assert.equal(Math.round(an.paddling.avg_speed_kmh * 100) / 100, 9);
+  assert.equal(an.paddling.avg_stroke_rate, 60);
+  assert.equal(Math.round(an.paddling.efficiency * 1000) / 1000, Math.round((9 / 75) * 1000) / 1000);
+  // Summary-only activity: no stroke data, metrics from distance and moving time.
+  const plain = await (await a.get("/activities/31/analysis")).json();
+  assert.equal(plain.paddling.avg_stroke_rate, null);
+  assert.equal(Math.round(plain.paddling.avg_speed_kmh * 100) / 100, 9.88);
+  // Not a paddling activity: no block.
+  seed(t);
+  assert.equal((await (await a.get("/activities/1/analysis")).json()).paddling, undefined);
+
+  const weeks = await (await a.get("/analytics/paddling?from=2026-10-01&to=2026-10-31")).json();
+  assert.deepEqual(weeks.map((w: { week: string; group: string }) => [w.week, w.group]), [["2026-10-05", "Dragon boat"], ["2026-10-12", "paddling"]]);
+  const filtered = await (await a.get("/analytics/paddling?from=2026-10-01&to=2026-10-31&custom_sport_id=1")).json();
+  assert.equal(filtered.length, 1);
+  assert.equal((await t.as("bob").get("/analytics/paddling?from=2026-10-01&to=2026-10-31")).status, 200);
+  assert.deepEqual(await (await t.as("bob").get("/analytics/paddling?from=2026-10-01&to=2026-10-31")).json(), []);
+  assert.equal((await a.get("/analytics/paddling?from=2026-10-31&to=2026-10-01")).status, 400);
 });

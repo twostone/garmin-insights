@@ -5,6 +5,7 @@
   import { pmcOption, volumeOption } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
   import ActivityRow from "$lib/components/ActivityRow.svelte";
+  import ReadinessCard from "$lib/components/ReadinessCard.svelte";
   import { addDays, num, today } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
@@ -41,6 +42,8 @@
     <a class="btn primary" href={href("/settings")}>{m.onboarding_cta()}</a>
   </section>
 {/if}
+
+<ReadinessCard />
 
 <section class="card">
   <div class="grid cols-3 stat">

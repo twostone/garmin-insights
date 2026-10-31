@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { recomputeUncleanedHr } from "./analytics/recompute.ts";
 import { createApi } from "./api/index.ts";
 import { createHaTokenVerifier, DEFAULT_HA_WS_URL } from "./auth/ha-token.ts";
 import { openDb } from "./db.ts";
@@ -40,6 +41,8 @@ const services = createServices({
   masterKey: loadOrCreateMasterKey(join(dataDir, "secret.key")),
   supervisorToken: process.env.SUPERVISOR_TOKEN ?? null,
 });
+// Activities from before HR cleaning existed get checked once; afterwards this finds nothing to do.
+for (const u of services.repos.users.list()) recomputeUncleanedHr(services.repos, u.id);
 const api = createApi(services);
 services.sync.start(settings.syncIntervalMinutes * 60_000);
 const EXPIRY_CHECK_MS = 6 * 3600_000;

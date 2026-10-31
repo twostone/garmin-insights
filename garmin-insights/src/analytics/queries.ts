@@ -1,12 +1,16 @@
 import { addDays, diffDays, todayLocal, weekStart } from "../dates.ts";
-import type { ActivityRow } from "../repo/activities.ts";
+import type { ActivityRow, SportFilter } from "../repo/activities.ts";
 import type { AthleteSettings } from "../repo/athlete.ts";
 import type { Repos } from "../repo/index.ts";
 import { bestEfforts, decoupling, meanMaxPower, POWER_DURATIONS_S, RUN_DISTANCES_M, type BestEffort, type MeanMax } from "./efforts.ts";
 import { healthTrends } from "./health.ts";
+import { BASELINE_DAYS, readiness, type ReadinessDay } from "./readiness.ts";
 import { perSecond, type Sample } from "./load.ts";
+import { paddleMetrics, paddleMetricsFromSummary, weeklyPaddling, type PaddleMetrics } from "./paddling.ts";
+import { analysisSamples } from "./recompute.ts";
 import { strengthVolume } from "./strength.ts";
 import { volumeBy } from "./volume.ts";
+import { HR_ZONE_COUNT, LEAD_IN_DAYS, weekBalances, type WeeklyActivity } from "./weekly.ts";
 import { hrZonesFromMax, paceZonesFromThreshold, powerZonesFromFtp, timeInZones, type ZoneConfig } from "./zones.ts";
 
 // Analyses that combine repos and the pure functions. Shared by the REST routes and the MCP tools, so both answer from the
@@ -39,7 +43,7 @@ export type ZoneResult = { kind: ZoneKind; floors: number[]; below: number; seco
 function zonesForActivity(repos: Repos, userId: string, a: ActivityRow, kind: ZoneKind): ZoneResult | null {
   const floors = zoneFloors(repos.athlete.at(userId, a.date), kind);
   if (a.fit_status === "done" && floors) {
-    const t = timeInZones(repos.activities.samples(userId, a.id), pickers[kind], floors);
+    const t = timeInZones(analysisSamples(repos, userId, a), pickers[kind], floors);
     if (t.zones.some(Boolean) || t.below) return { kind, floors, below: t.below, seconds: t.zones, source: "samples" };
   }
   // Without a FIT file, Garmin's own per-zone times from the summary are the next best thing (their zone boundaries, not ours).
@@ -52,8 +56,8 @@ function zonesForActivity(repos: Repos, userId: string, a: ActivityRow, kind: Zo
   return null;
 }
 
-export function zoneDistribution(repos: Repos, userId: string, o: { from: string; to: string; sport?: ActivityRow["sport"]; kind: ZoneKind }) {
-  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, limit: 1000, order: "asc" });
+export function zoneDistribution(repos: Repos, userId: string, o: SportFilter & { from: string; to: string; kind: ZoneKind }) {
+  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 1000, order: "asc" });
   let total: ZoneResult | null = null;
   let count = 0;
   for (const a of activities) {
@@ -75,18 +79,32 @@ export type ActivityAnalysis = {
   decoupling_pct: number | null;
   best_efforts: BestEffort[];
   mean_max_power: MeanMax[];
+  /** Only for paddling activities. */
+  paddling?: PaddleMetrics;
 };
 
 const WARMUP_S = 600;
 const WARMUP_MIN_DURATION_S = 2400;
 
+/** Resting HR valid on `date`: the athlete setting, else that day's measured resting HR. */
+function restingHr(repos: Repos, userId: string, date: string): number | null {
+  return repos.athlete.at(userId, date)?.hr_rest ?? repos.health.dailies.range(userId, date, date)[0]?.resting_hr ?? null;
+}
+
+function paddlingFor(repos: Repos, userId: string, a: ActivityRow, samples: readonly Sample[]): PaddleMetrics | null {
+  const hrRest = restingHr(repos, userId, a.date);
+  return (samples.length ? paddleMetrics(samples, { hrRest }) : null) ?? paddleMetricsFromSummary({ distance_m: a.distance_m, moving_s: a.moving_s ?? a.duration_s, avg_hr: a.avg_hr }, hrRest);
+}
+
 export function activityAnalysis(repos: Repos, userId: string, a: ActivityRow): ActivityAnalysis {
   const hasSamples = a.fit_status === "done";
-  const samples = hasSamples ? repos.activities.samples(userId, a.id) : [];
+  const samples = hasSamples ? analysisSamples(repos, userId, a) : [];
   const power = perSecond(samples, (s) => s.power);
   const usePower = a.sport === "cycling" && power.length > 0;
   const warmupS = (a.duration_s ?? 0) >= WARMUP_MIN_DURATION_S ? WARMUP_S : 0;
+  const paddling = a.sport === "paddling" ? paddlingFor(repos, userId, a, samples) : null;
   return {
+    ...(paddling ? { paddling } : {}),
     zones: { hr: zonesForActivity(repos, userId, a, "hr"), power: zonesForActivity(repos, userId, a, "power"), pace: a.sport === "running" ? zonesForActivity(repos, userId, a, "pace") : null },
     decoupling_pct: hasSamples && (a.sport === "running" || a.sport === "cycling" || a.sport === "walking" || a.sport === "hiking") ? decoupling(samples, { warmupS, usePower }) : null,
     best_efforts: hasSamples && a.sport === "running" ? bestEfforts(samples) : [],
@@ -99,8 +117,8 @@ export function activityAnalysis(repos: Repos, userId: string, a: ActivityRow): 
 const SPLIT_DISTANCES = [1000, 1609, 5000, 10000, 21098, 42195] as const;
 export type RangeBest = { activity_id: number; date: string };
 
-export function bestEffortsInRange(repos: Repos, userId: string, o: { from: string; to: string; sport: "running" | "cycling" }) {
-  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, limit: 5000, order: "asc" });
+export function bestEffortsInRange(repos: Repos, userId: string, o: { from: string; to: string; sport: "running" | "cycling"; customSportId?: number }) {
+  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 5000, order: "asc" });
   const run = new Map<number, { seconds: number } & RangeBest>();
   const ride = new Map<number, { watts: number } & RangeBest>();
   for (const a of activities) {
@@ -125,8 +143,22 @@ export function bestEffortsInRange(repos: Repos, userId: string, o: { from: stri
 }
 export { RUN_DISTANCES_M };
 
-export function volumeInRange(repos: Repos, userId: string, o: { from: string; to: string; by: "week" | "month"; sport?: ActivityRow["sport"] }) {
-  return volumeBy(repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, limit: 100_000, order: "asc" }), o.by);
+/** Volume grouped by the user's own sport where one is assigned, else by the Garmin-derived sport. */
+export function volumeInRange(repos: Repos, userId: string, o: SportFilter & { from: string; to: string; by: "week" | "month" }) {
+  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 100_000, order: "asc" });
+  return volumeBy(activities.map((a) => ({ ...a, sport: a.group_key })), o.by);
+}
+
+/** Weekly paddling trend per group (own sport where assigned). Per-activity efficiency comes from the summary, so no samples are read. */
+export function paddlingTrends(repos: Repos, userId: string, o: SportFilter & { from: string; to: string }) {
+  const filter = { from: o.from, to: o.to, sport: o.customSportId === undefined ? ("paddling" as const) : o.sport, customSportId: o.customSportId, counted: true, limit: 100_000, order: "asc" as const };
+  const activities = repos.activities.list(userId, filter);
+  return weeklyPaddling(
+    activities.map((a) => {
+      const moving_s = a.moving_s ?? a.duration_s;
+      return { date: a.date, group_key: a.group_key, distance_m: a.distance_m, moving_s, efficiency: paddleMetricsFromSummary({ distance_m: a.distance_m, moving_s, avg_hr: a.avg_hr }, restingHr(repos, userId, a.date))?.efficiency ?? null };
+    }),
+  );
 }
 
 export function strengthInRange(repos: Repos, userId: string, o: { from: string; to: string }) {
@@ -176,4 +208,52 @@ export function athleteSnapshot(repos: Repos, userId: string, date: string) {
     history: repos.athlete.history(userId).map(athleteView),
     effectiveZones: { hr: zoneFloors(current, "hr"), pace: zoneFloors(current, "pace"), power: zoneFloors(current, "power") },
   };
+}
+
+/** Readiness of `date`: the day and the baseline window before it, read from health and load tables. */
+export function readinessOn(repos: Repos, userId: string, date: string) {
+  const from = addDays(date, -BASELINE_DAYS);
+  const dailies = new Map(repos.health.dailies.range(userId, from, date).map((r) => [r.date, r]));
+  const sleep = new Map(repos.health.sleep.range(userId, from, date).map((r) => [r.date, r]));
+  const hrv = new Map(repos.health.hrv.range(userId, from, date).map((r) => [r.date, r]));
+  const load = new Map(repos.analytics.range(userId, from, date).map((r) => [r.date, r]));
+  const days: ReadinessDay[] = [];
+  for (let d = from; d <= date; d = addDays(d, 1)) {
+    days.push({
+      date: d, hrv: hrv.get(d)?.last_night_avg ?? null, hrvBaselineLow: hrv.get(d)?.baseline_low ?? null, hrvBaselineHigh: hrv.get(d)?.baseline_high ?? null,
+      restingHr: dailies.get(d)?.resting_hr ?? null, sleepS: sleep.get(d)?.sleep_s ?? null, sleepScore: sleep.get(d)?.score ?? null,
+      bodyBatteryHigh: dailies.get(d)?.body_battery_high ?? null, tsb: load.get(d)?.tsb ?? null,
+    });
+  }
+  return readiness(days, date);
+}
+
+const round = (v: number | null, digits: number): number | null => (v === null ? null : Math.round(v * 10 ** digits) / 10 ** digits);
+
+/**
+ * Weekly balance (load, ACWR, monotony, strain, intensity split, sport mix). Without a sport filter the daily load is the
+ * all-sport total; with one it is the load of the filtered activities only. Whole calendar weeks are analysed, so the week of
+ * `from` is complete, and 28 days of load before it feed the first ACWR.
+ */
+export function weeklyBalance(repos: Repos, userId: string, o: SportFilter & { from: string; to: string }) {
+  const firstWeek = weekStart(o.from);
+  const leadIn = addDays(firstWeek, -LEAD_IN_DAYS);
+  const filtered = o.sport !== undefined || o.customSportId !== undefined;
+  const activities = repos.activities.list(userId, { from: filtered ? leadIn : firstWeek, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 100_000, order: "asc" });
+  const dailyTss = new Map<string, number>();
+  if (filtered) for (const a of activities) dailyTss.set(a.date, (dailyTss.get(a.date) ?? 0) + (a.tss ?? 0));
+  else for (const d of repos.activities.dailyLoad(userId, leadIn, o.to)) dailyTss.set(d.date, d.tss);
+  const inWeeks = activities.filter((a) => a.date >= firstWeek).map((a): WeeklyActivity => {
+    const z = zonesForActivity(repos, userId, a, "hr");
+    return { date: a.date, sport: a.group_key, duration_s: a.duration_s, tss: a.tss, hrZoneSeconds: z?.seconds.length === HR_ZONE_COUNT ? z.seconds : null };
+  });
+  return weekBalances({ from: o.from, to: o.to, dailyTss, activities: inWeeks }).map((w) => ({
+    week: w.week,
+    load: round(w.load, 1)!,
+    acwr: round(w.acwr, 2),
+    monotony: round(w.monotony, 2),
+    strain: round(w.strain, 0),
+    intensity_pct: w.intensity_pct && { easy: round(w.intensity_pct.easy, 1)!, moderate: round(w.intensity_pct.moderate, 1)!, hard: round(w.intensity_pct.hard, 1)! },
+    sport_mix: w.sport_mix.map((s) => ({ sport: s.sport, duration_s: Math.round(s.duration_s), tss: round(s.tss, 1)! })),
+  }));
 }

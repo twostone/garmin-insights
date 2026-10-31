@@ -6,15 +6,16 @@ import { createHaTokenVerifier } from "../src/auth/ha-token.ts";
 import { createExternalApp } from "../src/listeners/external.ts";
 import { buildMcpServer, createMcpEndpoint } from "../src/mcp/server.ts";
 import type { GarminApi } from "../src/garmin/client.ts";
+import { openDb } from "../src/db.ts";
 import { jwt, mockHa, staticRoot, testApi } from "./helpers.ts";
-import { seedTraining } from "./seed.ts";
+import { seedPaddling, seedTraining } from "./seed.ts";
 
 const noGarmin = (): GarminApi => ({
   searchActivities: async () => [], downloadActivityZip: async () => null, dailySummaries: async () => [], sleepSummaries: async () => [], hrvSummaries: async () => [], heartRateZones: async () => [],
 });
 
-function services() {
-  const t = testApi({ garmin: noGarmin, today: () => "2026-10-30", garminClient: { fetch: (async () => new Response(jwt(86400))) as typeof fetch, minIntervalMs: 0 } });
+function services(db = openDb(":memory:")) {
+  const t = testApi({ db, garmin: noGarmin, today: () => "2026-10-30", garminClient: { fetch: (async () => new Response(jwt(86400))) as typeof fetch, minIntervalMs: 0 } });
   seedTraining(t);
   // Health data and a load history for alice.
   const dates = Array.from({ length: 40 }, (_, i) => new Date(Date.UTC(2026, 8, 20 + i)).toISOString().slice(0, 10));
@@ -35,19 +36,34 @@ async function connect(t: ReturnType<typeof services>, userId: string) {
 type ToolResult = { isError?: boolean; structuredContent?: Record<string, any>; content: { type: string; text: string }[] };
 const call = async (c: Client, name: string, args: Record<string, unknown> = {}) => (await c.callTool({ name, arguments: args })) as unknown as ToolResult;
 
+// Every tool the server offers, sorted.
+const TOOL_NAMES = [
+  "compare_activities", "get_activity", "get_activity_samples", "get_athlete_settings", "get_best_efforts", "get_health_trends",
+  "get_paddling_trends", "get_readiness", "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "list_custom_sports", "trigger_sync",
+];
+
 test("tools and prompts are listed; everything but trigger_sync is read-only", async () => {
   const c = await connect(services(), "alice");
   const tools = (await c.listTools()).tools;
-  assert.deepEqual(tools.map((t) => t.name).sort(), [
-    "compare_activities", "get_activity", "get_activity_samples", "get_athlete_settings", "get_best_efforts", "get_health_trends",
-    "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "trigger_sync",
-  ]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), TOOL_NAMES);
   for (const t of tools) {
     assert.ok(t.inputSchema, t.name);
     assert.ok(t.outputSchema, `${t.name} has a structured output schema`);
     assert.equal(t.annotations?.readOnlyHint, t.name !== "trigger_sync", t.name);
   }
   assert.deepEqual((await c.listPrompts()).prompts.map((p) => p.name).sort(), ["analyze_week", "race_readiness"]);
+});
+
+test("get_readiness: components with reasons, default today, scoped to the user", async () => {
+  const t = services();
+  const r = (await call(await connect(t, "alice"), "get_readiness", { date: "2026-10-29" })).structuredContent!;
+  assert.equal(r.date, "2026-10-29");
+  assert.equal((await call(await connect(t, "alice"), "get_readiness")).isError, undefined);
+  assert.equal(r.components.length, 5);
+  assert.equal(r.components.find((c: any) => c.key === "hrv").status, "good");
+  assert.equal(r.components.find((c: any) => c.key === "resting_hr").status, "good"); // 54 against a 28-day mean of ~52
+    assert.ok(r.components.every((c: any) => c.reason.length > 0));
+  assert.equal((await call(await connect(t, "bob"), "get_readiness", { date: "2026-10-29" })).structuredContent!.status, "unknown");
 });
 
 test("list_activities: filters, metric units, structured and text output agree", async () => {
@@ -98,6 +114,24 @@ test("get_activity_samples: columns, downsampling, window and field selection", 
   const w = (await call(c, "get_activity_samples", { activity_id: 1, from_s: 100, to_s: 199, max_points: 2000 })).structuredContent!;
   assert.equal(w.returned, 100);
   assert.equal((await call(c, "get_activity_samples", { activity_id: 3 })).isError, true, "no detail file for activity 3");
+});
+
+test("HR artifacts: brief reports the cleaned max with the raw one; samples are cleaned unless clean_hr is false", async () => {
+  const t = services();
+  const samples = t.repos.activities.samples("alice", 1).map((s) => (s.t === 300 ? { ...s, hr: 201 } : s));
+  t.repos.activities.replaceDetail("alice", 1, { samples, laps: t.repos.activities.laps("alice", 1), sets: [] });
+  const { recomputeLoads } = await import("../src/analytics/recompute.ts");
+  recomputeLoads(t.repos, "alice", "2026-10-01", "2026-10-30");
+  const c = await connect(t, "alice");
+  const a = (await call(c, "get_activity", { activity_id: 1 })).structuredContent!.activity;
+  assert.equal(a.max_hr_bpm, 160, "cleaned max from the recording");
+  assert.equal(a.max_hr_raw_bpm, 175, "Garmin's value as recorded");
+  assert.equal(a.hr_artifact_s, 1);
+  const plain = (await call(c, "list_activities", { from: "2026-10-10", to: "2026-10-10" })).structuredContent!.activities[0];
+  assert.deepEqual([plain.max_hr_bpm, plain.max_hr_raw_bpm, plain.hr_artifact_s], [175, 175, null], "no recording: raw value, not checked");
+  const window = { activity_id: 1, from_s: 299, to_s: 301, fields: ["hr"] };
+  assert.deepEqual((await call(c, "get_activity_samples", window)).structuredContent!.series.hr, [150, null, 150]);
+  assert.deepEqual((await call(c, "get_activity_samples", { ...window, clean_hr: false })).structuredContent!.series.hr, [150, 201, 150]);
 });
 
 test("get_strength_sets and compare_activities", async () => {
@@ -202,10 +236,70 @@ test("over HTTP: no token -> 401 with the metadata pointer; with a token the cli
     return client;
   };
   const alice = await clientFor(tokenAlice);
-  assert.equal((await alice.listTools()).tools.length, 12);
+  assert.equal((await alice.listTools()).tools.length, TOOL_NAMES.length);
   assert.equal((await call(alice, "list_activities")).structuredContent!.total, 3);
   const bob = await clientFor(tokenBob);
   assert.equal((await call(bob, "list_activities")).structuredContent!.total, 1);
   await alice.close();
   await bob.close();
+});
+
+test("list_custom_sports: name, base types and activity count; filters by name; scoped to the user", async () => {
+  const t = services();
+  const id = t.repos.customSports.create("alice", "Dragon boat", ["stand_up_paddleboarding"]);
+  t.repos.customSports.create("bob", "Bob's sport", []);
+  t.repos.customSports.assign("alice", 1, id);
+  const c = await connect(t, "alice");
+  const r = await call(c, "list_custom_sports");
+  assert.deepEqual(r.structuredContent!.custom_sports, [{ name: "Dragon boat", garmin_types: ["stand_up_paddleboarding"], activities: 1 }]);
+  assert.equal((await call(c, "list_activities", { custom_sport: "dragon boat" })).structuredContent!.total, 1);
+  assert.equal((await call(c, "list_activities", { custom_sport: "Bob's sport" })).isError, true);
+});
+
+test("get_training_load weekly adds the weekly balance; a sport filter limits load, monotony and ACWR but not CTL/ATL", async () => {
+  const db = openDb(":memory:");
+  const t = services(db);
+  db.prepare("INSERT INTO custom_sports (user_id, id, name) VALUES ('alice', 1, 'Dragon boat')").run();
+  db.prepare("UPDATE activities SET custom_sport_id = 1 WHERE user_id = 'alice' AND id = 1").run();
+  const { recomputeLoads } = await import("../src/analytics/recompute.ts");
+  recomputeLoads(t.repos, "alice", "2026-09-20", "2026-10-30");
+  const c = await connect(t, "alice");
+  const args = { from: "2026-09-28", to: "2026-10-11", granularity: "weekly" };
+
+  const all = (await call(c, "get_training_load", args)).structuredContent!.series;
+  assert.deepEqual(all.map((w: { week_start: string }) => w.week_start), ["2026-09-28", "2026-10-05"]);
+  assert.ok(all[0].training_stress > 0 && all[0].acwr > 0 && all[0].monotony > 0 && all[0].strain > 0, "load and balance are filled");
+  assert.ok(Math.abs(all[0].intensity_split_pct.easy + all[0].intensity_split_pct.moderate + all[0].intensity_split_pct.hard - 100) < 0.2);
+  assert.deepEqual(all[1].sport_mix.map((s: { sport: string }) => s.sport).sort(), ["running", "strength"]);
+  assert.deepEqual(all[0].sport_mix.map((s: { sport: string }) => s.sport), ["Dragon boat"]);
+
+  const own = (await call(c, "get_training_load", { ...args, custom_sport: "dragon boat" })).structuredContent!.series;
+  assert.deepEqual(own.map((w: { training_stress: number }) => w.training_stress), [all[0].training_stress, 0], "only the Dragon boat run counts");
+  assert.deepEqual(own.map((w: { ctl: number }) => w.ctl), all.map((w: { ctl: number }) => w.ctl), "CTL stays the whole-athlete value");
+  assert.equal((await call(c, "get_training_load", { ...args, custom_sport: "nope" })).isError, true);
+  assert.equal((await call(c, "get_training_load", { from: "2026-10-01", to: "2026-10-10", custom_sport: "Dragon boat" })).isError, true, "filter needs weekly");
+});
+
+test("paddling: get_activity carries the paddling metrics, get_paddling_trends groups per own sport", async () => {
+  const db = openDb(":memory:");
+  const t = testApi({ db, garmin: noGarmin, today: () => "2026-10-30", garminClient: { fetch: (async () => new Response(jwt(86400))) as typeof fetch, minIntervalMs: 0 } });
+  seedTraining(t);
+  seedPaddling(t, db);
+  const c = await connect(t, "alice");
+  const act = (await call(c, "get_activity", { activity_id: 30 })).structuredContent!;
+  assert.equal(act.paddling.avg_speed_kmh, 9);
+  assert.equal(act.paddling.pace_min_per_500m, 3.33);
+  assert.equal(act.paddling.avg_stroke_rate_spm, 60);
+  assert.equal(act.paddling.distance_per_stroke_m, 2.5);
+  assert.equal(act.paddling.efficiency_kmh_per_bpm_above_rest, 0.12);
+  assert.equal((await call(c, "get_activity", { activity_id: 1 })).structuredContent!.paddling, undefined);
+
+  const trends = (await call(c, "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31" })).structuredContent!;
+  assert.deepEqual(trends.weeks.map((w: { group: string }) => w.group), ["Dragon boat", "paddling"]);
+  assert.equal(trends.weeks[1].distance_km, 8.4);
+  assert.equal(trends.weeks[1].avg_speed_kmh, 9.88);
+  const own = (await call(c, "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31", custom_sport: "dragon boat" })).structuredContent!;
+  assert.equal(own.weeks.length, 1);
+  assert.equal((await call(c, "get_paddling_trends", { custom_sport: "nope" })).isError, true);
+  assert.deepEqual((await call(await connect(t, "bob"), "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31" })).structuredContent!.weeks, []);
 });

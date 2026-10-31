@@ -3,33 +3,39 @@
   import { api, unwrap } from "$lib/api.ts";
   import { pmcOption, volumeOption, zoneOption } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
+  import LoadHeatmap from "$lib/components/LoadHeatmap.svelte";
+  import PaddlingCard from "$lib/components/PaddlingCard.svelte";
+  import SportFilter from "$lib/components/SportFilter.svelte";
+  import WeeklyBalanceCard from "$lib/components/WeeklyBalanceCard.svelte";
   import { addDays, dateLabel, duration, num, pace, today } from "$lib/format.ts";
+  import { sportQuery } from "$lib/sport-filter.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
-  import type { Zone } from "$lib/types.ts";
+  import type { SportFilterValue, Zone } from "$lib/types.ts";
 
   const RANGES = [90, 180, 365, 1825] as const;
   let days = $state<number>(180);
   let metric = $state<"hours" | "km">("hours");
   let bestSport = $state<"running" | "cycling">("running");
   let zoneKind = $state<"hr" | "power" | "pace">("hr");
+  let sportFilter = $state<SportFilterValue>({});
   const to = today();
   const from = $derived(addDays(to, -(days - 1)));
 
   const pmc = new Resource(() => unwrap<{ date: string; ctl: number; atl: number; tsb: number; tss: number }[]>(api.analytics.pmc.$get({ query: { from, to } })));
-  const volume = new Resource(() => unwrap<{ period: string; sport: string; duration_s: number; distance_m: number }[]>(api.analytics.volume.$get({ query: { from, to, by: days > 400 ? "month" : "week" } })));
+  const volume = new Resource(() => unwrap<{ period: string; sport: string; duration_s: number; distance_m: number }[]>(api.analytics.volume.$get({ query: { from, to, by: days > 400 ? "month" : "week", ...sportQuery(sportFilter) } as never })));
   const best = new Resource(() => unwrap<{ efforts: { distance_m: number; seconds: number; activity_id: number; date: string }[]; power_curve: { seconds: number; watts: number; date: string }[] }>(api.analytics["best-efforts"].$get({ query: { from: addDays(to, -364), to, sport: bestSport } })));
-  const zones = new Resource(() => unwrap<NonNullable<Zone> & { activities: number }>(api.analytics.zones.$get({ query: { from, to, kind: zoneKind } })));
+  const zones = new Resource(() => unwrap<NonNullable<Zone> & { activities: number }>(api.analytics.zones.$get({ query: { from, to, kind: zoneKind, ...sportQuery(sportFilter) } as never })));
   const strength = new Resource(() => unwrap<{ byMuscleGroup: { group: string; sets: number; volume_kg: number }[]; byExercise: { exercise: string; sets: number; volume_kg: number; best_e1rm_kg: number | null }[]; totalVolumeKg: number }>(api.analytics.strength.$get({ query: { from, to } })));
 
   $effect(() => {
-    void [from, sync.finishedCount];
+    void [from, sportFilter, sync.finishedCount];
     void pmc.reload();
     void volume.reload();
     void strength.reload();
   });
   $effect(() => {
-    void [from, zoneKind, sync.finishedCount];
+    void [from, zoneKind, sportFilter, sync.finishedCount];
     void zones.reload();
   });
   $effect(() => {
@@ -50,12 +56,17 @@
     <button type="button" class="chip" aria-pressed={days === d} onclick={() => (days = d)}>{rangeLabel(d)}</button>
   {/each}
 </div>
+<SportFilter bind:value={sportFilter} />
 
 <section class="card">
   <h2>{m.trends_pmc()}</h2>
   {#if pmc.data?.length}<Chart option={pmcOption(pmc.data)} height={300} label={m.chart_pmc_label()} />{:else if !pmc.loading}<p class="muted">{m.empty_data()}</p>{/if}
   <p class="muted small">{m.trends_pmc_hint()}</p>
 </section>
+
+<LoadHeatmap {to} />
+<WeeklyBalanceCard {from} {to} filter={sportFilter} />
+<PaddlingCard {from} {to} filter={sportFilter} />
 
 <section class="card">
   <div class="row between">
