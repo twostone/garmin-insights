@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { downsample } from "../analytics/downsample.ts";
-import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, paddlingTrends, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import type { PaddleMetrics } from "../analytics/paddling.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import { isDate, todayLocal, weekStart } from "../dates.ts";
 import type { KeyService } from "../garmin/keys.ts";
@@ -34,6 +35,17 @@ const result = <T extends object>(output: T) => ({ content: [{ type: "text" as c
 const failure = (message: string) => ({ isError: true as const, content: [{ type: "text" as const, text: message }] });
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+
+const paddlingOutput = z.object({
+  moving_min: z.number(), avg_speed_kmh: z.number(), pace_min_per_500m: z.number(), max_speed_1min_kmh: z.number().nullable(), max_speed_5min_kmh: z.number().nullable(),
+  avg_stroke_rate_spm: z.number().nullable(), distance_per_stroke_m: z.number().nullable(), avg_hr_bpm: z.number().nullable(),
+  efficiency_kmh_per_bpm_above_rest: z.number().nullable().describe("average speed (km/h) per bpm above resting heart rate; higher = more speed for the same effort"),
+});
+const paddlingView = (p: PaddleMetrics) => ({
+  moving_min: round(p.moving_s / 60, 1)!, avg_speed_kmh: round(p.avg_speed_kmh, 2)!, pace_min_per_500m: round(p.pace_s_per_500m / 60, 2)!,
+  max_speed_1min_kmh: round(p.max_speed_1min_kmh, 2), max_speed_5min_kmh: round(p.max_speed_5min_kmh, 2), avg_stroke_rate_spm: round(p.avg_stroke_rate, 1),
+  distance_per_stroke_m: round(p.distance_per_stroke_m, 2), avg_hr_bpm: round(p.avg_hr, 0), efficiency_kmh_per_bpm_above_rest: round(p.efficiency, 3),
+});
 
 const paceMinPerKm = (speedMps: number | null) => (speedMps && speedMps > 0 ? round(1000 / speedMps / 60, 2) : null);
 
@@ -111,7 +123,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     {
       title: "Get activity",
       description:
-        "Details of one activity: metrics, laps, time in heart-rate/power/pace zones, aerobic decoupling (Pa:Hr, positive = efficiency dropped), best efforts (running), mean-maximal power (cycling) and strength totals. Time series are available through get_activity_samples.",
+        "Details of one activity: metrics, laps, time in heart-rate/power/pace zones, aerobic decoupling (Pa:Hr, positive = efficiency dropped), best efforts (running), mean-maximal power (cycling), paddling metrics (speed, pace per 500 m, stroke rate, efficiency) and strength totals. Time series are available through get_activity_samples.",
       inputSchema: z.object({ activity_id: z.number().int().positive() }),
       outputSchema: z.object({
         activity: briefSchema,
@@ -123,6 +135,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
         best_efforts: z.array(z.object({ distance_m: z.number(), seconds: z.number(), start_s: z.number() })),
         mean_max_power: z.array(z.object({ seconds: z.number(), watts: z.number() })),
         strength: z.object({ total_volume_kg: z.number(), exercises: z.array(z.object({ exercise: z.string(), sets: z.number(), reps: z.number(), volume_kg: z.number(), max_weight_kg: z.number().nullable() })) }).nullable(),
+        paddling: paddlingOutput.optional(),
       }),
       annotations: readOnly,
     },
@@ -149,6 +162,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
         decoupling_pct: round(analysis.decoupling_pct),
         best_efforts: analysis.best_efforts.map((e) => ({ distance_m: e.distance, seconds: round(e.seconds, 1)!, start_s: Math.round(e.startT) })),
         mean_max_power: analysis.mean_max_power.map((p) => ({ seconds: p.seconds, watts: round(p.watts, 0)! })),
+        ...(analysis.paddling ? { paddling: paddlingView(analysis.paddling) } : {}),
         strength: strength && { total_volume_kg: round(strength.totalVolumeKg, 0)!, exercises: strength.byExercise.map((e) => ({ exercise: e.exercise, sets: e.sets, reps: e.reps, volume_kg: round(e.volume_kg, 0)!, max_weight_kg: e.max_weight_kg })) },
       });
     },
@@ -352,6 +366,32 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
         sport: q.sport,
         running: b.efforts.map((e) => ({ distance_m: e.distance_m, seconds: round(e.seconds, 1)!, pace_min_per_km: round(e.seconds / 60 / (e.distance_m / 1000), 2), activity_id: e.activity_id, date: e.date })),
         power_curve: b.power_curve.map((p) => ({ seconds: p.seconds, watts: round(p.watts, 0)!, activity_id: p.activity_id, date: p.date })),
+      });
+    },
+  );
+
+  server.registerTool(
+    "get_paddling_trends",
+    {
+      title: "Get paddling trends",
+      description: "Weekly paddling (SUP, kayak, dragon boat, outrigger) per group: distance, moving time, average speed (total distance over moving time) and mean efficiency (km/h per bpm above resting HR). Activities are grouped by the athlete's own sport where one is assigned (e.g. OC1, dragon boat), else 'paddling'. Default range: last 180 days.",
+      inputSchema: z.object({ custom_sport: customSport, ...range }),
+      outputSchema: z.object({
+        weeks: z.array(z.object({ week_start: z.string(), group: z.string(), activities: z.number(), distance_km: z.number(), moving_min: z.number(), avg_speed_kmh: z.number().nullable(), avg_efficiency_kmh_per_bpm_above_rest: z.number().nullable() })),
+      }),
+      annotations: readOnly,
+    },
+    async (q) => {
+      const r = resolveRange(q, 180);
+      const err = rangeError(r);
+      if (err) return failure(err);
+      const cs = resolveCustomSport(q.custom_sport);
+      if (cs.error) return failure(cs.error);
+      return result({
+        weeks: paddlingTrends(repos, uid, { ...r, customSportId: cs.customSportId }).map((w) => ({
+          week_start: w.week, group: w.group, activities: w.count, distance_km: round(w.distance_m / 1000, 2)!, moving_min: round(w.duration_s / 60, 0)!,
+          avg_speed_kmh: round(w.avg_speed_kmh, 2), avg_efficiency_kmh_per_bpm_above_rest: round(w.avg_efficiency, 3),
+        })),
       });
     },
   );

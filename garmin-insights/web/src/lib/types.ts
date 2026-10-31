@@ -13,3 +13,9 @@ export type Zone = { kind: "hr" | "power" | "pace"; floors: number[]; below: num
 export type SetRow = { idx: number; start_s: number | null; duration_s: number | null; set_type: "active" | "rest"; exercise: string | null; reps: number | null; weight_kg: number | null };
 /** Which activities a page's analyses look at: a Garmin-derived sport, one of the user's own sports, or all (both unset). */
 export type SportFilterValue = { sport?: string; customSportId?: number };
+
+/** Paddling metrics of one activity (GET /activities/{id}/analysis). */
+export type Paddling = {
+  moving_s: number; avg_speed_kmh: number; pace_s_per_500m: number; max_speed_1min_kmh: number | null; max_speed_5min_kmh: number | null;
+  avg_stroke_rate: number | null; distance_per_stroke_m: number | null; avg_hr: number | null; efficiency: number | null;
+};

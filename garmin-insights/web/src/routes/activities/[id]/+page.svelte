@@ -6,16 +6,16 @@
   import { seriesOption, sportName, zoneOption } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
   import MapView from "$lib/components/MapView.svelte";
-  import { dateLabel, duration, kmh, km, meters, num, pace, sportColor, timeLabel } from "$lib/format.ts";
+  import { dateLabel, duration, kmh, km, meters, num, pace, pacePer500m, sportColor, timeLabel } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
-  import type { ActivityFull, Lap, SetRow, Zone } from "$lib/types.ts";
+  import type { ActivityFull, Lap, Paddling, SetRow, Zone } from "$lib/types.ts";
 
   const id = $derived(page.params.id ?? "");
   const detail = new Resource(() => unwrap<{ activity: ActivityFull; summary: Record<string, unknown> }>(api.activities[":id"].$get({ param: { id } })));
   const samples = new Resource(() => unwrap<{ total: number; samples: import("$lib/types.ts").Sample[] }>(api.activities[":id"].samples.$get({ param: { id }, query: { max_points: "1500" } })));
   const laps = new Resource(() => unwrap<Lap[]>(api.activities[":id"].laps.$get({ param: { id } })));
   const strength = new Resource(() => unwrap<{ sets: SetRow[]; byExercise: { exercise: string; sets: number; reps: number; volume_kg: number; max_weight_kg: number | null; best_e1rm_kg: number | null }[]; totalVolumeKg: number }>(api.activities[":id"].strength.$get({ param: { id } })));
-  const analysis = new Resource(() => unwrap<{ zones: { hr: Zone; power: Zone; pace: Zone }; decoupling_pct: number | null; best_efforts: { distance: number; seconds: number; startT: number }[]; mean_max_power: { seconds: number; watts: number }[] }>(api.activities[":id"].analysis.$get({ param: { id } })));
+  const analysis = new Resource(() => unwrap<{ zones: { hr: Zone; power: Zone; pace: Zone }; decoupling_pct: number | null; best_efforts: { distance: number; seconds: number; startT: number }[]; mean_max_power: { seconds: number; watts: number }[]; paddling?: Paddling }>(api.activities[":id"].analysis.$get({ param: { id } })));
 
   // The route param changes when navigating between activities: reload everything.
   $effect(() => {
@@ -98,6 +98,23 @@
         </section>
       {/if}
     {/each}
+
+    {#if analysis.data.paddling}
+      {@const p = analysis.data.paddling}
+      <section class="card">
+        <h2>{m.paddling_title()}</h2>
+        <div class="grid cols-4 stat">
+          <div><div class="v">{kmh(p.avg_speed_kmh / 3.6)}</div><div class="l">{m.paddling_speed()}</div></div>
+          <div><div class="v">{pacePer500m(p.pace_s_per_500m)}</div><div class="l">{m.paddling_pace500()}</div></div>
+          {#if p.max_speed_1min_kmh !== null}<div><div class="v">{kmh(p.max_speed_1min_kmh / 3.6)}</div><div class="l">{m.paddling_best_1min()}</div></div>{/if}
+          {#if p.max_speed_5min_kmh !== null}<div><div class="v">{kmh(p.max_speed_5min_kmh / 3.6)}</div><div class="l">{m.paddling_best_5min()}</div></div>{/if}
+          {#if p.avg_stroke_rate !== null}<div><div class="v">{num(p.avg_stroke_rate, 0)} {m.paddling_unit_spm()}</div><div class="l">{m.paddling_stroke_rate()}</div></div>{/if}
+          {#if p.distance_per_stroke_m !== null}<div><div class="v">{num(p.distance_per_stroke_m, 1)} {m.paddling_unit_m()}</div><div class="l">{m.paddling_per_stroke()}</div></div>{/if}
+          {#if p.efficiency !== null}<div><div class="v">{num(p.efficiency, 3)}</div><div class="l">{m.paddling_efficiency()}</div></div>{/if}
+        </div>
+        {#if p.efficiency !== null}<p class="muted small">{m.paddling_efficiency_hint()}</p>{/if}
+      </section>
+    {/if}
 
     {#if analysis.data.best_efforts.length}
       <section class="card">

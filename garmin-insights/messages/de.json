@@ -240,5 +240,19 @@
   "mcp_claude_ai": "Beispiel claude.ai: Einstellungen → Konnektoren → Benutzerdefinierten Konnektor hinzufügen, Adresse einfügen.",
   "mcp_claude_code": "Beispiel Claude Code: Diesen Befehl ausführen, danach /mcp eingeben und anmelden.",
   "mcp_tools": "Verfügbar: {tools}. Alle nur lesend, außer trigger_sync, das eine Synchronisation startet.",
-  "mcp_unavailable": "Der MCP-Server braucht die App-Optionen ha_external_url und app_external_url sowie einen Reverse-Proxy mit HTTPS vor Port 8100. Trage sie in der App-Konfiguration ein und starte die App neu."
+  "mcp_unavailable": "Der MCP-Server braucht die App-Optionen ha_external_url und app_external_url sowie einen Reverse-Proxy mit HTTPS vor Port 8100. Trage sie in der App-Konfiguration ein und starte die App neu.",
+  "paddling_title": "Paddeln",
+  "paddling_distance": "Distanz pro Woche",
+  "paddling_speed": "Ø-Tempo",
+  "paddling_efficiency": "Effizienz",
+  "paddling_efficiency_hint": "Tempo (km/h) pro Herzschlag über der Ruhe-HF. Höher heißt mehr Tempo bei gleichem Aufwand.",
+  "paddling_pace500": "Pace /500 m",
+  "paddling_best_1min": "Bestes Tempo, 1 min",
+  "paddling_best_5min": "Bestes Tempo, 5 min",
+  "paddling_stroke_rate": "Schlagfrequenz",
+  "paddling_per_stroke": "Distanz pro Schlag",
+  "paddling_unit_spm": "Schl./min",
+  "paddling_unit_kmh": "km/h",
+  "paddling_unit_km": "km",
+  "paddling_unit_m": "m"
 }

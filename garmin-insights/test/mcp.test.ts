@@ -7,7 +7,8 @@ import { createExternalApp } from "../src/listeners/external.ts";
 import { buildMcpServer, createMcpEndpoint } from "../src/mcp/server.ts";
 import type { GarminApi } from "../src/garmin/client.ts";
 import { jwt, mockHa, staticRoot, testApi } from "./helpers.ts";
-import { seedTraining } from "./seed.ts";
+import { openDb } from "../src/db.ts";
+import { seedPaddling, seedTraining } from "./seed.ts";
 
 const noGarmin = (): GarminApi => ({
   searchActivities: async () => [], downloadActivityZip: async () => null, dailySummaries: async () => [], sleepSummaries: async () => [], hrvSummaries: async () => [], heartRateZones: async () => [],
@@ -40,7 +41,7 @@ test("tools and prompts are listed; everything but trigger_sync is read-only", a
   const tools = (await c.listTools()).tools;
   assert.deepEqual(tools.map((t) => t.name).sort(), [
     "compare_activities", "get_activity", "get_activity_samples", "get_athlete_settings", "get_best_efforts", "get_health_trends",
-    "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "trigger_sync",
+    "get_paddling_trends", "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "trigger_sync",
   ]);
   for (const t of tools) {
     assert.ok(t.inputSchema, t.name);
@@ -202,10 +203,34 @@ test("over HTTP: no token -> 401 with the metadata pointer; with a token the cli
     return client;
   };
   const alice = await clientFor(tokenAlice);
-  assert.equal((await alice.listTools()).tools.length, 12);
+  assert.equal((await alice.listTools()).tools.length, 13);
   assert.equal((await call(alice, "list_activities")).structuredContent!.total, 3);
   const bob = await clientFor(tokenBob);
   assert.equal((await call(bob, "list_activities")).structuredContent!.total, 1);
   await alice.close();
   await bob.close();
+});
+
+test("paddling: get_activity carries the paddling metrics, get_paddling_trends groups per own sport", async () => {
+  const db = openDb(":memory:");
+  const t = testApi({ db, garmin: noGarmin, today: () => "2026-10-30", garminClient: { fetch: (async () => new Response(jwt(86400))) as typeof fetch, minIntervalMs: 0 } });
+  seedTraining(t);
+  seedPaddling(t, db);
+  const c = await connect(t, "alice");
+  const act = (await call(c, "get_activity", { activity_id: 30 })).structuredContent!;
+  assert.equal(act.paddling.avg_speed_kmh, 9);
+  assert.equal(act.paddling.pace_min_per_500m, 3.33);
+  assert.equal(act.paddling.avg_stroke_rate_spm, 60);
+  assert.equal(act.paddling.distance_per_stroke_m, 2.5);
+  assert.equal(act.paddling.efficiency_kmh_per_bpm_above_rest, 0.12);
+  assert.equal((await call(c, "get_activity", { activity_id: 1 })).structuredContent!.paddling, undefined);
+
+  const trends = (await call(c, "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31" })).structuredContent!;
+  assert.deepEqual(trends.weeks.map((w: { group: string }) => w.group), ["Dragon boat", "paddling"]);
+  assert.equal(trends.weeks[1].distance_km, 8.4);
+  assert.equal(trends.weeks[1].avg_speed_kmh, 9.88);
+  const own = (await call(c, "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31", custom_sport: "dragon boat" })).structuredContent!;
+  assert.equal(own.weeks.length, 1);
+  assert.equal((await call(c, "get_paddling_trends", { custom_sport: "nope" })).isError, true);
+  assert.deepEqual((await call(await connect(t, "bob"), "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31" })).structuredContent!.weeks, []);
 });

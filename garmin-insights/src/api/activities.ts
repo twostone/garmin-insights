@@ -32,6 +32,10 @@ const setSchema = z.object({
   reps: z.number().nullable(), weight_kg: z.number().nullable(),
 });
 const zoneSchema = z.object({ kind: z.enum(["hr", "power", "pace"]), floors: z.array(z.number()), below: z.number(), seconds: z.array(z.number()), source: z.enum(["samples", "garmin_summary"]) }).nullable();
+const paddlingSchema = z.object({
+  moving_s: z.number(), avg_speed_kmh: z.number(), pace_s_per_500m: z.number(), max_speed_1min_kmh: z.number().nullable(), max_speed_5min_kmh: z.number().nullable(),
+  avg_stroke_rate: z.number().nullable(), distance_per_stroke_m: z.number().nullable(), avg_hr: z.number().nullable(), efficiency: z.number().nullable(),
+});
 const exerciseSchema = z.object({ exercise: z.string(), muscle_group: z.string(), sets: z.number(), reps: z.number(), volume_kg: z.number(), max_weight_kg: z.number().nullable(), best_e1rm_kg: z.number().nullable() });
 
 const MAX_SAMPLES = 5000;
@@ -149,6 +153,7 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
             decoupling_pct: z.number().nullable(),
             best_efforts: z.array(z.object({ distance: z.number(), seconds: z.number(), startT: z.number() })),
             mean_max_power: z.array(z.object({ seconds: z.number(), watts: z.number() })),
+            paddling: paddlingSchema.optional(),
           })),
           ...errors(404),
         },
