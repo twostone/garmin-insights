@@ -7,7 +7,7 @@
   import { sync } from "$lib/sync.svelte.ts";
   import type { SportFilterValue } from "$lib/types.ts";
 
-  // Paddling trends per own sport for the trends page: weekly distance (bars), average speed and efficiency (lines).
+  // Paddling trends per own sport for the Training volume page: weekly distance (bars), average speed and efficiency (lines).
   // Without paddling activities in the range the card stays hidden.
   let { from, to, filter }: { from: string; to: string; filter: SportFilterValue } = $props();
 

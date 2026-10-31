@@ -6,6 +6,8 @@ import { customSportColor } from "./custom-sports.svelte.ts";
 const nf = (opts: Intl.NumberFormatOptions) => new Intl.NumberFormat(getLocale(), opts);
 
 export const num = (v: number | null | undefined, digits = 0) => (v === null || v === undefined || Number.isNaN(v) ? "–" : nf({ maximumFractionDigits: digits, minimumFractionDigits: digits }).format(v));
+/** Signed number with "+" for positive values ("+4,2"); "–" without a value. */
+export const signed = (v: number | null | undefined, digits = 1) => (v === null || v === undefined ? "–" : `${v > 0 ? "+" : ""}${num(v, digits)}`);
 export const km = (m: number | null | undefined, digits = 1) => (m === null || m === undefined ? "–" : `${num(m / 1000, digits)} km`);
 export const meters = (m: number | null | undefined) => (m === null || m === undefined ? "–" : `${num(m)} m`);
 
@@ -41,6 +43,8 @@ export const today = (): string => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 export const addDays = (date: string, days: number): string => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+/** Monday of the week containing `date` (weeks start on Monday, as in the backend). */
+export const mondayOf = (date: string): string => addDays(date, -((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7));
 
 /** "m:ss" or "h:mm:ss" typed by a person -> seconds; null when it does not parse. */
 export function parseDuration(text: string): number | null {
@@ -52,6 +56,8 @@ export function parseDuration(text: string): number | null {
 /** The Garmin-derived sports with their own colour and name; anything else (e.g. a user-defined sport) is shown as is. */
 export const KNOWN_SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "paddling", "rowing", "other"];
 export const sportColor = (sport: string) => `var(--c-${KNOWN_SPORTS.includes(sport) ? sport : "other"})`;
+/** A sport colour as the background of white text: darkened, so the text stays readable with the light dark-theme colours. */
+export const onColorBackground = (color: string) => `color-mix(in srgb, ${color} 78%, #000)`;
 
 /** Readable name of a Garmin activity type ("stand_up_paddleboarding_v2" -> "Stand-up paddling"); unknown types keep their key. */
 export function garminTypeName(key: string): string {
@@ -73,3 +79,12 @@ const GARMIN_TYPE_NAMES: Record<string, () => string> = {
 
 /** CSS colour of a Garmin-derived sport, or of an own sport when `custom` is set. */
 export const anySportColor = (sport: string, custom?: string | null) => (custom ? customSportColor(custom) : sportColor(sport));
+
+/** Plain-language reading of the form (TSB), from fresh to overreaching. */
+export function formText(tsb: number): string {
+  if (tsb > 15) return m.form_fresh();
+  if (tsb > 5) return m.form_transition();
+  if (tsb >= -10) return m.form_neutral();
+  if (tsb >= -30) return m.form_optimal();
+  return m.form_overreach();
+}

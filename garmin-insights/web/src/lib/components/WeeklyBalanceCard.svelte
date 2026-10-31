@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoTip from "$lib/components/InfoTip.svelte";
   import { m } from "$lib/paraglide/messages.js";
   import { api, unwrap } from "$lib/api.ts";
   import { weeklyBalanceOption, type WeekRow } from "$lib/charts.ts";
@@ -8,7 +9,7 @@
   import { sync } from "$lib/sync.svelte.ts";
   import type { SportFilterValue } from "$lib/types.ts";
 
-  // Weekly balance (ACWR, monotony, strain, intensity split, sport mix) for the trends page.
+  // Weekly balance (ACWR, monotony, strain, intensity split, sport mix) for the Training load page.
   let { from, to, filter }: { from: string; to: string; filter: SportFilterValue } = $props();
 
   type Week = WeekRow & { load: number; monotony: number | null; strain: number | null; intensity_pct: { easy: number; moderate: number; hard: number } | null };
@@ -28,7 +29,7 @@
 </script>
 
 <section class="card">
-  <h2>{m.weekly_title()}</h2>
+  <h2>{m.weekly_title()}<InfoTip metric="acwr" /></h2>
   {#if weeks.data?.length}
     <Chart option={weeklyBalanceOption(weeks.data)} height={300} label={m.weekly_chart_label()} />
     <div class="table-scroll">
@@ -38,8 +39,8 @@
           <tr>
             <th scope="col">{m.weekly_col_week()}</th>
             <th scope="col" class="r">{m.weekly_col_load()}</th>
-            <th scope="col" class="r">{m.weekly_col_monotony()}</th>
-            <th scope="col" class="r">{m.weekly_col_strain()}</th>
+            <th scope="col" class="r">{m.weekly_col_monotony()}<InfoTip metric="monotony" /></th>
+            <th scope="col" class="r">{m.weekly_col_strain()}<InfoTip metric="strain" /></th>
             <th scope="col" class="r">{m.weekly_col_easy()}</th>
             <th scope="col" class="r">{m.weekly_col_hard()}</th>
           </tr>

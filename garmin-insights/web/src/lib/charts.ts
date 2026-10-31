@@ -18,10 +18,29 @@ export function pmcOption(rows: Pmc): EChartsCoreOption {
     yAxis: { type: "value", splitLine: { lineStyle: { color: color("--border") } } },
     dataZoom: [{ type: "inside" }],
     series: [
-      { name: m.chart_fitness(), type: "line", showSymbol: false, data: rows.map((r) => Math.round(r.ctl * 10) / 10), lineStyle: { color: accent, width: 3 }, itemStyle: { color: accent } },
-      { name: m.chart_fatigue(), type: "line", showSymbol: false, data: rows.map((r) => Math.round(r.atl * 10) / 10), lineStyle: { color: color("--c-running"), width: 2 }, itemStyle: { color: color("--c-running") } },
-      { name: m.chart_form(), type: "bar", data: rows.map((r) => Math.round(r.tsb * 10) / 10), itemStyle: { color: color("--c-other"), opacity: 0.5 } },
+      { name: m.chart_fitness(), type: "line", showSymbol: false, data: rows.map((r) => round1(r.ctl)), lineStyle: { color: accent, width: 3 }, itemStyle: { color: accent }, areaStyle: { color: accent, opacity: AREA_OPACITY } },
+      { name: m.chart_fatigue(), type: "line", showSymbol: false, data: rows.map((r) => round1(r.atl)), lineStyle: { color: color("--c-running"), width: 2 }, itemStyle: { color: color("--c-running") } },
+      { name: m.chart_form(), type: "bar", data: rows.map((r) => round1(r.tsb)), itemStyle: { color: color("--c-other"), opacity: 0.5 } },
     ],
+  };
+}
+
+const AREA_OPACITY = 0.12;
+const SPARK_DOT_SIZE = 7;
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+/** Fitness and fatigue as a small line without axes (overview); the latest value of each line ends in a dot. */
+export function pmcSparkOption(rows: Pmc): EChartsCoreOption {
+  const line = (name: string, values: number[], c: string, width: number) => ({
+    name, type: "line", symbol: "none", lineStyle: { color: c, width }, itemStyle: { color: c },
+    data: values.map((v, i) => (i === values.length - 1 ? { value: round1(v), symbol: "circle", symbolSize: SPARK_DOT_SIZE } : round1(v))),
+  });
+  return {
+    grid: { left: 2, right: SPARK_DOT_SIZE, top: SPARK_DOT_SIZE, bottom: 2, containLabel: false },
+    xAxis: { type: "category", show: false, data: rows.map((r) => r.date), boundaryGap: false },
+    yAxis: { type: "value", show: false, scale: true },
+    tooltip: { trigger: "axis", axisPointer: { type: "line" } },
+    series: [line(m.chart_fatigue(), rows.map((r) => r.atl), color("--c-running"), 1.5), line(m.chart_fitness(), rows.map((r) => r.ctl), color("--accent"), 2.5)],
   };
 }
 

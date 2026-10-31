@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoTip from "$lib/components/InfoTip.svelte";
   import { page } from "$app/state";
   import { href } from "$lib/nav";
   import { m } from "$lib/paraglide/messages.js";
@@ -7,7 +8,7 @@
   import Chart from "$lib/components/Chart.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import { customSports } from "$lib/custom-sports.svelte.ts";
-  import { dateLabel, duration, garminTypeName, kmh, km, meters, num, pace, pacePer500m, anySportColor, sportColor, timeLabel } from "$lib/format.ts";
+  import { dateLabel, duration, garminTypeName, kmh, km, meters, num, onColorBackground, pace, pacePer500m, anySportColor, sportColor, timeLabel } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import type { ActivityFull, Lap, Leg, Paddling, SetRow, Zone } from "$lib/types.ts";
 
@@ -68,8 +69,11 @@
 {#if detail.error}
   <p class="danger" role="alert">{m.error_not_found()}</p>
 {:else if a}
-  <h1><span class="dot" style:background={anySportColor(a.sport, a.custom_sport)} style="display:inline-block;width:.7rem;height:1.2rem;border-radius:4px;margin-right:.5rem"></span>{a.name || a.custom_sport || sportName(a.sport)}</h1>
-  <p class="muted">{a.custom_sport ?? sportName(a.sport)}{#if !a.custom_sport && typeMatch} · <em>{m.cs_unassigned()}</em>{/if} · {dateLabel(a.date, { dateStyle: "full" } as Intl.DateTimeFormatOptions)} · {timeLabel(a.start_utc)}</p>
+  <!-- Head in the sport's colour, darkened so the white text stays readable in both themes. -->
+  <header class="detail-head" style:background={onColorBackground(anySportColor(a.sport, a.custom_sport))}>
+    <p>{a.custom_sport ?? sportName(a.sport)}{#if !a.custom_sport && typeMatch} · <em>{m.cs_unassigned()}</em>{/if} · {dateLabel(a.date, { dateStyle: "full" } as Intl.DateTimeFormatOptions)} · {timeLabel(a.start_utc)}</p>
+    <h1>{a.name || a.custom_sport || sportName(a.sport)}</h1>
+  </header>
 
   <!-- Multisport: a leg links back to its parent -->
   {#if a.parent_id !== null}
@@ -85,15 +89,15 @@
       {#if a.avg_hr}<div><div class="v">{num(a.avg_hr)}</div><div class="l">{m.metric_avg_hr()}</div></div>{/if}
       {#if a.max_hr_clean ?? a.max_hr}<div><div class="v">{num(a.max_hr_clean ?? a.max_hr)}</div><div class="l">{m.metric_max_hr()}</div></div>{/if}
       {#if a.avg_power}<div><div class="v">{num(a.avg_power)} W</div><div class="l">{m.metric_avg_power()}</div></div>{/if}
-      {#if a.norm_power}<div><div class="v">{num(a.norm_power)} W</div><div class="l">{m.metric_np()}</div></div>{/if}
+      {#if a.norm_power}<div><div class="v">{num(a.norm_power)} W</div><div class="l">{m.metric_np()}<InfoTip metric="np" /></div></div>{/if}
       {#if a.elevation_gain_m}<div><div class="v">{meters(a.elevation_gain_m)}</div><div class="l">{m.metric_ascent()}</div></div>{/if}
       {#if a.calories}<div><div class="v">{num(a.calories)}</div><div class="l">{m.metric_calories()}</div></div>{/if}
-      {#if a.vo2max}<div><div class="v">{num(a.vo2max, 0)}</div><div class="l">{m.metric_vo2max()}</div></div>{/if}
-      {#if a.te_aerobic}<div><div class="v">{num(a.te_aerobic, 1)}</div><div class="l">{m.metric_te()}</div></div>{/if}
-      <div><div class="v">{num(a.tss, 0)}</div><div class="l">{m.metric_tss()}{#if a.tss_method} <span class="small"> ({methodName(a.tss_method)})</span>{/if}</div></div>
-      <div><div class="v">{num(a.trimp, 0)}</div><div class="l">{m.metric_trimp()}</div></div>
+      {#if a.vo2max}<div><div class="v">{num(a.vo2max, 0)}</div><div class="l">{m.metric_vo2max()}<InfoTip metric="vo2max" /></div></div>{/if}
+      {#if a.te_aerobic}<div><div class="v">{num(a.te_aerobic, 1)}</div><div class="l">{m.metric_te()}<InfoTip metric="te" /></div></div>{/if}
+      <div><div class="v">{num(a.tss, 0)}</div><div class="l">{m.metric_tss()}{#if a.tss_method} <span class="small"> ({methodName(a.tss_method)})</span>{/if}<InfoTip metric="tss" /></div></div>
+      <div><div class="v">{num(a.trimp, 0)}</div><div class="l">{m.metric_trimp()}<InfoTip metric="trimp" /></div></div>
       {#if analysis.data?.decoupling_pct !== null && analysis.data?.decoupling_pct !== undefined}
-        <div><div class="v">{num(analysis.data.decoupling_pct, 1)} %</div><div class="l">{m.metric_decoupling()}</div></div>
+        <div><div class="v">{num(analysis.data.decoupling_pct, 1)} %</div><div class="l">{m.metric_decoupling()}<InfoTip metric="decoupling" /></div></div>
       {/if}
     </div>
   </section>
@@ -210,7 +214,7 @@
       <h2>{m.detail_strength()}</h2>
       <p class="muted">{m.strength_total({ volume: num(strength.data.totalVolumeKg) })}</p>
       <div class="table-scroll"><table>
-        <thead><tr><th>{m.strength_exercise()}</th><th class="r">{m.strength_sets()}</th><th class="r">{m.strength_reps()}</th><th class="r">{m.strength_volume()}</th><th class="r">{m.strength_e1rm()}</th></tr></thead>
+        <thead><tr><th>{m.strength_exercise()}</th><th class="r">{m.strength_sets()}</th><th class="r">{m.strength_reps()}</th><th class="r">{m.strength_volume()}</th><th class="r">{m.strength_e1rm()}<InfoTip metric="e1rm" /></th></tr></thead>
         <tbody>{#each strength.data.byExercise as e (e.exercise)}
           <tr><td>{exerciseName(e.exercise)}</td><td class="r">{e.sets}</td><td class="r">{e.reps}</td><td class="r">{num(e.volume_kg)} kg</td><td class="r">{e.best_e1rm_kg ? `${num(e.best_e1rm_kg, 1)} kg` : "–"}</td></tr>
         {/each}</tbody>
@@ -232,3 +236,9 @@
 {:else}
   <p class="muted">{m.loading()}</p>
 {/if}
+
+<style>
+  .detail-head { border-radius: var(--radius); padding: 1.1rem 1rem; margin-bottom: 0.9rem; color: #fff; }
+  .detail-head p { margin: 0 0 0.2rem; opacity: 0.88; font-size: 0.9rem; }
+  .detail-head h1 { margin: 0; }
+</style>

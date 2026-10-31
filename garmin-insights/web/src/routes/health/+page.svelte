@@ -1,9 +1,11 @@
 <script lang="ts">
+  import InfoTip from "$lib/components/InfoTip.svelte";
   import { m } from "$lib/paraglide/messages.js";
   import { api, unwrap } from "$lib/api.ts";
   import { healthOption } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
-  import { addDays, dateLabel, num, today } from "$lib/format.ts";
+  import RangePicker from "$lib/components/RangePicker.svelte";
+  import { addDays, dateLabel, num, signed, today } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
 
@@ -29,15 +31,14 @@
     void dailies.reload();
   });
 
-  const sign = (v: number | null) => (v === null ? "–" : `${v > 0 ? "+" : ""}${num(v, 1)}`);
   const hours = (s: number | null) => (s ? `${num(s / 3600, 1)} h` : "–");
   const corr = (v: number | null) => (v === null ? m.corr_unknown() : Math.abs(v) < 0.3 ? m.corr_none() : v > 0 ? m.corr_positive({ r: num(v, 2) }) : m.corr_negative({ r: num(v, 2) }));
   const cards = $derived(
     trends.data
       ? [
-          { key: "restingHr" as const, title: m.metric_resting_hr(), unit: "bpm", digits: 0, metric: trends.data.latest.restingHr, correlation: trends.data.correlations.restingHrVsAtl },
-          { key: "hrv" as const, title: m.metric_hrv(), unit: "ms", digits: 0, metric: trends.data.latest.hrv, correlation: trends.data.correlations.hrvVsAtl },
-          { key: "sleep" as const, title: m.metric_sleep_hours(), unit: "h", digits: 1, metric: trends.data.latest.sleepHours, correlation: trends.data.correlations.sleepVsAtl },
+          { key: "restingHr" as const, info: "resting_hr" as const, title: m.metric_resting_hr(), unit: "bpm", digits: 0, metric: trends.data.latest.restingHr, correlation: trends.data.correlations.restingHrVsAtl },
+          { key: "hrv" as const, info: "hrv" as const, title: m.metric_hrv(), unit: "ms", digits: 0, metric: trends.data.latest.hrv, correlation: trends.data.correlations.hrvVsAtl },
+          { key: "sleep" as const, info: "sleep" as const, title: m.metric_sleep_hours(), unit: "h", digits: 1, metric: trends.data.latest.sleepHours, correlation: trends.data.correlations.sleepVsAtl },
         ]
       : [],
   );
@@ -45,17 +46,15 @@
 
 <h1>{m.nav_health()}</h1>
 
-<div class="chips" role="group" aria-label={m.range_label()} style="margin-bottom:1rem">
-  {#each RANGES as d (d)}
-    <button type="button" class="chip" aria-pressed={days === d} onclick={() => (days = d)}>{m.range_days({ days: d })}</button>
-  {/each}
+<div class="filter-bar">
+  <RangePicker bind:value={days} options={RANGES.map((d) => ({ days: d, label: m.range_days_short({ days: d }) }))} />
 </div>
 
 {#each cards as c (c.key)}
   <section class="card">
     <div class="row between">
-      <h2>{c.title}</h2>
-      <div class="num"><strong>{num(c.metric.avg7, c.digits)} {c.unit}</strong> <span class="muted small">{m.health_vs_baseline({ delta: sign(c.metric.deltaVsBaseline) })}</span></div>
+      <h2>{c.title}<InfoTip metric={c.info} /></h2>
+      <div class="num"><strong class="value">{num(c.metric.avg7, c.digits)} {c.unit}</strong> <span class="muted small">{m.health_vs_baseline({ delta: signed(c.metric.deltaVsBaseline) })}</span></div>
     </div>
     {#if trends.data}<Chart option={healthOption(trends.data.points, c.key, c.title)} height={220} label={c.title} />{/if}
     <p class="muted small">{m.health_load_relation({ text: corr(c.correlation) })}</p>
@@ -83,3 +82,7 @@
     </table></div>
   </section>
 </div>
+
+<style>
+  .value { font-family: var(--font-display); font-size: 1.6rem; font-weight: 600; }
+</style>
