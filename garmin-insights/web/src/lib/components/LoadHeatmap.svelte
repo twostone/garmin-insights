@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, unwrap } from "$lib/api.ts";
-  import { addDays, dateLabel, num } from "$lib/format.ts";
+  import { addDays, dateLabel, mondayOf, num } from "$lib/format.ts";
   import { m } from "$lib/paraglide/messages.js";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
@@ -14,8 +14,6 @@
   const LEVELS = 4;
   type Day = { date: string; count: number; tss: number };
 
-  /** Monday of the week containing `date`. */
-  const mondayOf = (date: string) => addDays(date, -((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7));
   const firstDay = $derived(addDays(mondayOf(to), -(WEEKS - 1) * DAYS_PER_WEEK));
 
   const calendar = new Resource(() => unwrap<(Day & { duration_s: number; distance_m: number })[]>(api.activities.calendar.$get({ query: { from: firstDay, to } })));
@@ -66,10 +64,10 @@
 <style>
   .heat { display: grid; grid-template-columns: repeat(12, minmax(0, 28px)); gap: 4px; }
   .col { display: grid; grid-template-rows: repeat(7, 1fr); gap: 4px; }
-  .cell { aspect-ratio: 1; min-height: 14px; border-radius: 3px; background: var(--border); }
-  .l1 { background: color-mix(in srgb, var(--accent) 30%, var(--border)); }
-  .l2 { background: color-mix(in srgb, var(--accent) 55%, var(--border)); }
-  .l3 { background: color-mix(in srgb, var(--accent) 80%, var(--border)); }
+  .cell { aspect-ratio: 1; min-height: 14px; border-radius: 4px; background: var(--raised); }
+  .l1 { background: color-mix(in srgb, var(--accent) 30%, var(--raised)); }
+  .l2 { background: color-mix(in srgb, var(--accent) 55%, var(--raised)); }
+  .l3 { background: color-mix(in srgb, var(--accent) 80%, var(--raised)); }
   .l4 { background: var(--accent); }
   .empty { background: transparent; }
   .legend { display: flex; align-items: center; gap: 4px; margin-top: 0.75rem; }

@@ -73,7 +73,7 @@
 
 <h1>{m.nav_activities()}</h1>
 
-<div class="filter-bar">
+<div class="filter-bar pair">
   <SportFilter bind:value={sportFilter} onchange={filter} />
   <div class="seg" role="group" aria-label={m.view_label()}>
     <button type="button" aria-pressed={view === "list"} onclick={() => (view = "list")}>{m.view_list()}</button>

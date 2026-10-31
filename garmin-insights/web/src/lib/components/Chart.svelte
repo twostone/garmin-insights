@@ -21,7 +21,7 @@
     const text = css("--muted");
     const line = css("--border");
     return {
-      textStyle: { color: text },
+      textStyle: { color: text, fontFamily: css("--font-body") },
       animation: false,
       grid: { left: 8, right: 12, top: 28, bottom: 8, containLabel: true },
       ...o,

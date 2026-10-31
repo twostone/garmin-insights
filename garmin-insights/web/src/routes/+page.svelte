@@ -1,34 +1,49 @@
 <script lang="ts">
+  import InfoTip from "$lib/components/InfoTip.svelte";
   import { href } from "$lib/nav";
   import { api, unwrap } from "$lib/api.ts";
   import { m } from "$lib/paraglide/messages.js";
-  import { pmcOption, volumeOption } from "$lib/charts.ts";
+  import { pmcSparkOption, sportCssColor, sportName } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
   import ActivityRow from "$lib/components/ActivityRow.svelte";
   import ReadinessCard from "$lib/components/ReadinessCard.svelte";
-  import { addDays, num, today } from "$lib/format.ts";
+  import { addDays, dateLabel, formText, mondayOf, num, signed, today } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
   import type { ActivityLite } from "$lib/types.ts";
 
+  const SPARK_DAYS = 42;
+  const COMPARE_WEEKS = 4;
   const to = today();
-  const pmc = new Resource(() => unwrap<{ date: string; ctl: number; atl: number; tsb: number; tss: number }[]>(api.analytics.pmc.$get({ query: { from: addDays(to, -89), to } })));
+  const thisWeek = mondayOf(to);
+
+  const pmc = new Resource(() => unwrap<{ date: string; ctl: number; atl: number; tsb: number; tss: number }[]>(api.analytics.pmc.$get({ query: { from: addDays(to, -(SPARK_DAYS - 1)), to } })));
   const recent = new Resource(() => unwrap<{ items: ActivityLite[] }>(api.activities.$get({ query: { limit: "5" } })));
-  const volume = new Resource(() => unwrap<{ period: string; sport: string; duration_s: number; distance_m: number }[]>(api.analytics.volume.$get({ query: { from: addDays(to, -55), to, by: "week" } })));
-  const trends = new Resource(() => unwrap<{ latest: Record<"restingHr" | "hrv" | "sleepHours", { avg7: number | null; deltaVsBaseline: number | null }> }>(api.analytics.trends.$get({ query: { from: addDays(to, -69), to } })));
+  const volume = new Resource(() => unwrap<{ period: string; sport: string; duration_s: number }[]>(api.analytics.volume.$get({ query: { from: addDays(thisWeek, -COMPARE_WEEKS * 7), to, by: "week" } })));
 
   $effect(() => {
     void sync.finishedCount;
-    for (const r of [pmc, recent, volume, trends]) void r.reload();
+    for (const r of [pmc, recent, volume]) void r.reload();
   });
 
   const last = $derived(pmc.data?.at(-1));
-  const formText = $derived(
-    !last ? "" : last.tsb > 15 ? m.form_fresh() : last.tsb > 5 ? m.form_transition() : last.tsb >= -10 ? m.form_neutral() : last.tsb >= -30 ? m.form_optimal() : m.form_overreach(),
-  );
-  const sign = (v: number | null | undefined) => (v === null || v === undefined ? "–" : `${v > 0 ? "+" : ""}${num(v, 1)}`);
+
+  // This week's hours per sport against the average of the weeks before (the marker on each bar).
+  const week = $derived.by(() => {
+    const rows = volume.data ?? [];
+    const sports = [...new Set(rows.map((r) => r.sport))];
+    const hours = (sport: string, current: boolean) => rows.filter((r) => r.sport === sport && (r.period === thisWeek) === current).reduce((a, r) => a + r.duration_s, 0) / 3600;
+    const bars = sports
+      .map((sport) => ({ sport, now: hours(sport, true), avg: hours(sport, false) / COMPARE_WEEKS }))
+      .sort((a, b) => b.now - a.now || b.avg - a.avg);
+    const max = Math.max(0, ...bars.flatMap((b) => [b.now, b.avg]));
+    const total = (pick: (b: (typeof bars)[number]) => number) => bars.reduce((a, b) => a + pick(b), 0);
+    return { bars, max, now: total((b) => b.now), avg: total((b) => b.avg) };
+  });
+  const share = (h: number) => (week.max > 0 ? `${(h / week.max) * 100}%` : "0%");
 </script>
 
+<p class="eyebrow">{dateLabel(to, { weekday: "long", day: "numeric", month: "long" })}</p>
 <h1>{m.nav_dashboard()}</h1>
 
 {#if sync.needsKey}
@@ -45,43 +60,43 @@
 
 <ReadinessCard />
 
-<section class="card">
-  <div class="grid cols-3 stat">
-    <div><div class="v">{num(last?.ctl, 0)}</div><div class="l">{m.chart_fitness()} (CTL)</div></div>
-    <div><div class="v">{num(last?.atl, 0)}</div><div class="l">{m.chart_fatigue()} (ATL)</div></div>
-    <div><div class="v">{sign(last?.tsb)}</div><div class="l">{m.chart_form()} (TSB)</div></div>
-  </div>
-  {#if formText}<p class="muted small">{formText}</p>{/if}
-  {#if pmc.data?.length}
-    <Chart option={pmcOption(pmc.data)} label={m.chart_pmc_label()} />
-  {:else if !pmc.loading}
-    <p class="muted">{m.empty_data()}</p>
-  {/if}
-</section>
-
 <div class="two-col">
   <section class="card">
-    <h2>{m.dashboard_weekly_volume()}</h2>
-    {#if volume.data?.length}
-      <Chart option={volumeOption(volume.data, "hours")} height={220} label={m.dashboard_weekly_volume()} />
-    {:else if !volume.loading}<p class="muted">{m.empty_data()}</p>{/if}
+    <div class="head"><h2>{m.today_form()}</h2><a href={href("/training")}>{m.today_form_link()}</a></div>
+    <div class="grid cols-3 stat">
+      <div><div class="v">{num(last?.ctl, 0)}</div><div class="l">{m.chart_fitness()} (CTL)<InfoTip metric="ctl" /></div></div>
+      <div><div class="v">{num(last?.atl, 0)}</div><div class="l">{m.chart_fatigue()} (ATL)<InfoTip metric="atl" /></div></div>
+      <div><div class="v">{signed(last?.tsb, 0)}</div><div class="l">{m.chart_form()} (TSB)<InfoTip metric="tsb" /></div></div>
+    </div>
+    {#if pmc.data?.length}
+      <Chart option={pmcSparkOption(pmc.data)} height={64} label={m.chart_pmc_spark_label()} />
+    {:else if !pmc.loading}
+      <p class="muted">{m.empty_data()}</p>
+    {/if}
+    {#if last}<p class="muted small">{formText(last.tsb)}</p>{/if}
   </section>
 
   <section class="card">
-    <h2>{m.dashboard_health()}</h2>
-    {#if trends.data}
-      <div class="grid cols-3 stat">
-        <div><div class="v">{num(trends.data.latest.restingHr.avg7, 0)}</div><div class="l">{m.metric_resting_hr()} <span class="small">({sign(trends.data.latest.restingHr.deltaVsBaseline)})</span></div></div>
-        <div><div class="v">{num(trends.data.latest.hrv.avg7, 0)}</div><div class="l">{m.metric_hrv()} <span class="small">({sign(trends.data.latest.hrv.deltaVsBaseline)})</span></div></div>
-        <div><div class="v">{num(trends.data.latest.sleepHours.avg7, 1)}</div><div class="l">{m.metric_sleep_hours()}</div></div>
-      </div>
-      <p class="muted small">{m.dashboard_health_hint()}</p>
+    <div class="head"><h2>{m.today_week()}</h2><a href={href("/training/volume")}>{m.today_week_link()}</a></div>
+    {#if week.bars.length}
+      <ul class="bars">
+        {#each week.bars as b (b.sport)}
+          <li>
+            <span class="sport">{sportName(b.sport)}</span>
+            <span class="track"><span class="fill" style:width={share(b.now)} style:background={sportCssColor(b.sport)}></span><span class="avg" style:left={share(b.avg)}></span></span>
+            <span class="h num">{num(b.now, 1)} h</span>
+          </li>
+        {/each}
+      </ul>
+      <p class="muted small">{m.today_week_summary({ week: num(week.now, 1), avg: num(week.avg, 1) })}</p>
+    {:else if !volume.loading}
+      <p class="muted">{m.empty_data()}</p>
     {/if}
   </section>
 </div>
 
 <section class="card">
-  <div class="row between"><h2>{m.dashboard_recent()}</h2><a href={href("/activities")}>{m.show_all()}</a></div>
+  <div class="head"><h2>{m.dashboard_recent()}</h2><a href={href("/activities")}>{m.show_all()}</a></div>
   {#each recent.data?.items ?? [] as activity (activity.id)}
     <ActivityRow {activity} />
   {:else}
@@ -89,3 +104,13 @@
   {/each}
 </section>
 
+<style>
+  .bars { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.6rem; }
+  .bars li { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) 3.5rem; gap: 0.75rem; align-items: center; }
+  .sport { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track { position: relative; height: 10px; border-radius: 5px; background: var(--raised); }
+  .fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
+  /* Average of the weeks before: a thin mark across the bar. */
+  .avg { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
+  .h { text-align: right; font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; }
+</style>

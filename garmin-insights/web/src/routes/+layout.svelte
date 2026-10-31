@@ -12,12 +12,13 @@
 
   let { children } = $props();
 
+  // Each tab has a small line icon (SVG path data, 24 × 24, drawn with the current text colour).
   const tabs = [
-    { id: "/", label: () => m.nav_dashboard() },
-    { id: "/activities", label: () => m.nav_activities() },
-    { id: "/trends", label: () => m.nav_trends() },
-    { id: "/health", label: () => m.nav_health() },
-    { id: "/settings", label: () => m.nav_settings() },
+    { id: "/", label: () => m.nav_dashboard(), icon: "M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" },
+    { id: "/activities", label: () => m.nav_activities(), icon: "M4 6h16M4 12h16M4 18h10" },
+    { id: "/training", label: () => m.nav_training(), icon: "M3 17l5-6 4 3 4-7 5 6" },
+    { id: "/health", label: () => m.nav_health(), icon: "M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" },
+    { id: "/settings", label: () => m.nav_settings(), icon: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" },
   ] as const;
   const active = (id: string) => (id === "/" ? page.route.id === "/" : (page.route.id ?? "").startsWith(id));
 
@@ -59,7 +60,10 @@
 {:else}
   <nav class="tabs" aria-label={m.app_name()}>
     {#each tabs as tab (tab.id)}
-      <a href={href(tab.id)} aria-current={active(tab.id) ? "page" : undefined}>{tab.label()}</a>
+      <a href={href(tab.id)} aria-current={active(tab.id) ? "page" : undefined}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={tab.icon} /></svg>
+        <span>{tab.label()}</span>
+      </a>
     {/each}
   </nav>
 
