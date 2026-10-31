@@ -125,3 +125,31 @@ export function phaseName(phase: string): string {
   };
   return (names[phase] ?? m.phase_starting)();
 }
+
+export type WeekRow = { week: string; acwr: number | null; sport_mix: { sport: string; duration_s: number }[] };
+
+// The ACWR range that counts as the sweet spot, drawn as two guide lines (same numbers as ACWR_SWEET_SPOT in the backend).
+const ACWR_SWEET_SPOT = [0.8, 1.3] as const;
+
+/** Weekly stacked bars of training time per sport (hours) with the ACWR as a line on a second axis. */
+export function weeklyBalanceOption(rows: WeekRow[]): EChartsCoreOption {
+  const sports = [...new Set(rows.flatMap((r) => r.sport_mix.map((s) => s.sport)))].sort();
+  const hours = (r: WeekRow, sport: string) => Math.round((r.sport_mix.find((s) => s.sport === sport)?.duration_s ?? 0) / 360) / 10;
+  const accent = color("--accent");
+  const guide = { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: color("--muted"), type: "dashed" } };
+  return {
+    legend: { data: [...sports.map((s) => sportName(s)), m.weekly_acwr()] },
+    xAxis: { type: "category", data: rows.map((r) => r.week), axisLabel: { formatter: (v: string) => dateLabel(v, { day: "numeric", month: "short" }) } },
+    yAxis: [
+      { type: "value", name: "h", splitLine: { lineStyle: { color: color("--border") } } },
+      { type: "value", name: m.weekly_acwr(), min: 0, splitLine: { show: false } },
+    ],
+    series: [
+      ...sports.map((sport) => ({ name: sportName(sport), type: "bar", stack: "time", itemStyle: { color: sportCssColor(sport) }, data: rows.map((r) => hours(r, sport)) })),
+      {
+        name: m.weekly_acwr(), type: "line", yAxisIndex: 1, connectNulls: false, data: rows.map((r) => r.acwr), lineStyle: { color: accent, width: 3 }, itemStyle: { color: accent },
+        markLine: { ...guide, data: ACWR_SWEET_SPOT.map((yAxis) => ({ yAxis })) },
+      },
+    ],
+  };
+}

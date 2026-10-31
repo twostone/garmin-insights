@@ -7,6 +7,7 @@ import { healthTrends } from "./health.ts";
 import { perSecond, type Sample } from "./load.ts";
 import { strengthVolume } from "./strength.ts";
 import { volumeBy } from "./volume.ts";
+import { HR_ZONE_COUNT, LEAD_IN_DAYS, weekBalances, type WeeklyActivity } from "./weekly.ts";
 import { hrZonesFromMax, paceZonesFromThreshold, powerZonesFromFtp, timeInZones, type ZoneConfig } from "./zones.ts";
 
 // Analyses that combine repos and the pure functions. Shared by the REST routes and the MCP tools, so both answer from the
@@ -178,4 +179,34 @@ export function athleteSnapshot(repos: Repos, userId: string, date: string) {
     history: repos.athlete.history(userId).map(athleteView),
     effectiveZones: { hr: zoneFloors(current, "hr"), pace: zoneFloors(current, "pace"), power: zoneFloors(current, "power") },
   };
+}
+
+const round = (v: number | null, digits: number): number | null => (v === null ? null : Math.round(v * 10 ** digits) / 10 ** digits);
+
+/**
+ * Weekly balance (load, ACWR, monotony, strain, intensity split, sport mix). Without a sport filter the daily load is the
+ * all-sport total; with one it is the load of the filtered activities only. Whole calendar weeks are analysed, so the week of
+ * `from` is complete, and 28 days of load before it feed the first ACWR.
+ */
+export function weeklyBalance(repos: Repos, userId: string, o: SportFilter & { from: string; to: string }) {
+  const firstWeek = weekStart(o.from);
+  const leadIn = addDays(firstWeek, -LEAD_IN_DAYS);
+  const filtered = o.sport !== undefined || o.customSportId !== undefined;
+  const activities = repos.activities.list(userId, { from: filtered ? leadIn : firstWeek, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 100_000, order: "asc" });
+  const dailyTss = new Map<string, number>();
+  if (filtered) for (const a of activities) dailyTss.set(a.date, (dailyTss.get(a.date) ?? 0) + (a.tss ?? 0));
+  else for (const d of repos.activities.dailyLoad(userId, leadIn, o.to)) dailyTss.set(d.date, d.tss);
+  const inWeeks = activities.filter((a) => a.date >= firstWeek).map((a): WeeklyActivity => {
+    const z = zonesForActivity(repos, userId, a, "hr");
+    return { date: a.date, sport: a.group_key, duration_s: a.duration_s, tss: a.tss, hrZoneSeconds: z?.seconds.length === HR_ZONE_COUNT ? z.seconds : null };
+  });
+  return weekBalances({ from: o.from, to: o.to, dailyTss, activities: inWeeks }).map((w) => ({
+    week: w.week,
+    load: round(w.load, 1)!,
+    acwr: round(w.acwr, 2),
+    monotony: round(w.monotony, 2),
+    strain: round(w.strain, 0),
+    intensity_pct: w.intensity_pct && { easy: round(w.intensity_pct.easy, 1)!, moderate: round(w.intensity_pct.moderate, 1)!, hard: round(w.intensity_pct.hard, 1)! },
+    sport_mix: w.sport_mix.map((s) => ({ sport: s.sport, duration_s: Math.round(s.duration_s), tss: round(s.tss, 1)! })),
+  }));
 }
