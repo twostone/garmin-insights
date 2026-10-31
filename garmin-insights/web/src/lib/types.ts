@@ -11,3 +11,5 @@ export type Sample = { t: number; lat: number | null; lon: number | null; alt: n
 export type Lap = { idx: number; start_s: number | null; duration_s: number | null; distance_m: number | null; avg_hr: number | null; max_hr: number | null; avg_power: number | null; avg_speed: number | null; avg_cadence: number | null; ascent_m: number | null };
 export type Zone = { kind: "hr" | "power" | "pace"; floors: number[]; below: number; seconds: number[]; source: "samples" | "garmin_summary" } | null;
 export type SetRow = { idx: number; start_s: number | null; duration_s: number | null; set_type: "active" | "rest"; exercise: string | null; reps: number | null; weight_kg: number | null };
+/** Which activities a page's analyses look at: a Garmin-derived sport, one of the user's own sports, or all (both unset). */
+export type SportFilterValue = { sport?: string; customSportId?: number };

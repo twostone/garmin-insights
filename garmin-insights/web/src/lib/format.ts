@@ -45,4 +45,6 @@ export function parseDuration(text: string): number | null {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
-export const sportColor = (sport: string) => `var(--c-${["running", "cycling", "swimming", "strength", "walking", "hiking"].includes(sport) ? sport : "other"})`;
+/** The Garmin-derived sports with their own colour and name; anything else (e.g. a user-defined sport) is shown as is. */
+export const KNOWN_SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "paddling", "rowing", "other"];
+export const sportColor = (sport: string) => `var(--c-${KNOWN_SPORTS.includes(sport) ? sport : "other"})`;

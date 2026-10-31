@@ -1,10 +1,10 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { m } from "$lib/paraglide/messages.js";
-import { dateLabel, duration, num } from "./format.ts";
+import { dateLabel, duration, KNOWN_SPORTS, num } from "./format.ts";
 
 // ECharts options for the pages. Colours come from the page's CSS variables (canvas cannot resolve var()).
 const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
-export const sportCssColor = (sport: string) => color(`--c-${["running", "cycling", "swimming", "strength", "walking", "hiking"].includes(sport) ? sport : "other"}`);
+export const sportCssColor = (sport: string) => color(`--c-${KNOWN_SPORTS.includes(sport) ? sport : "other"}`);
 
 type Pmc = { date: string; ctl: number; atl: number; tsb: number; tss: number }[];
 
@@ -47,9 +47,10 @@ export function volumeOption(rows: Volume, metric: "hours" | "km"): EChartsCoreO
 export function sportName(sport: string): string {
   const names: Record<string, () => string> = {
     running: m.sport_running, cycling: m.sport_cycling, swimming: m.sport_swimming, strength: m.sport_strength,
-    walking: m.sport_walking, hiking: m.sport_hiking, other: m.sport_other,
+    walking: m.sport_walking, hiking: m.sport_hiking, paddling: m.sport_paddling, rowing: m.sport_rowing, other: m.sport_other,
   };
-  return (names[sport] ?? names.other!)();
+  // Not a Garmin-derived sport: a name the user gave their own sport.
+  return names[sport]?.() ?? sport;
 }
 
 export type SamplePoint = { t: number; hr: number | null; power: number | null; speed: number | null; alt: number | null; cadence: number | null };

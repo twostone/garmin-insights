@@ -76,6 +76,8 @@
   "sport_strength": "Kraft",
   "sport_walking": "Gehen",
   "sport_hiking": "Wandern",
+  "sport_paddling": "Paddeln",
+  "sport_rowing": "Rudern",
   "sport_other": "Sonstiges",
   "filter_sport": "Sportart",
   "filter_all": "Alle",

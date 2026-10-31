@@ -27,6 +27,7 @@ const HEALTH_POINTS = 120;
 const date = z.string().refine(isDate, "date as YYYY-MM-DD");
 const sport = z.enum(SPORTS as unknown as [Sport, ...Sport[]]);
 const range = { from: date.optional().describe("first day, YYYY-MM-DD"), to: date.optional().describe("last day, YYYY-MM-DD (default: today)") };
+const customSport = z.string().min(1).max(100).optional().describe("one of the athlete's own sports by name (see list_custom_sports)");
 
 const round = (v: number | null | undefined, digits = 1): number | null => (v === null || v === undefined ? null : Math.round(v * 10 ** digits) / 10 ** digits);
 const result = <T extends object>(output: T) => ({ content: [{ type: "text" as const, text: JSON.stringify(output) }], structuredContent: output as Record<string, unknown> });
@@ -44,11 +45,13 @@ export function brief(a: ActivityRow) {
     start_utc: a.start_utc,
     name: a.name,
     sport: a.sport,
+    custom_sport: a.custom_sport,
     garmin_type: a.type_key,
     distance_km: round(a.distance_m === null ? null : a.distance_m / 1000, 2),
     duration_min: round(a.duration_s === null ? null : a.duration_s / 60, 1),
     avg_pace_min_per_km: a.sport === "running" || a.sport === "walking" || a.sport === "hiking" ? paceMinPerKm(a.avg_speed) : null,
-    avg_speed_kmh: a.avg_speed === null ? null : round(a.avg_speed * 3.6, 1),
+    // Indoor sessions report 0 m/s; without a distance there is no speed to speak of.
+    avg_speed_kmh: a.avg_speed === null || !a.distance_m ? null : round(a.avg_speed * 3.6, 1),
     avg_hr_bpm: round(a.avg_hr, 0),
     max_hr_bpm: round(a.max_hr, 0),
     avg_power_w: round(a.avg_power, 0),
@@ -60,7 +63,7 @@ export function brief(a: ActivityRow) {
   };
 }
 const briefSchema = z.object({
-  id: z.number(), date: z.string(), start_utc: z.string(), name: z.string().nullable(), sport: z.string(), garmin_type: z.string(),
+  id: z.number(), date: z.string(), start_utc: z.string(), name: z.string().nullable(), sport: z.string(), custom_sport: z.string().nullable(), garmin_type: z.string(),
   distance_km: z.number().nullable(), duration_min: z.number().nullable(), avg_pace_min_per_km: z.number().nullable(), avg_speed_kmh: z.number().nullable(),
   avg_hr_bpm: z.number().nullable(), max_hr_bpm: z.number().nullable(), avg_power_w: z.number().nullable(), normalized_power_w: z.number().nullable(),
   elevation_gain_m: z.number().nullable(), training_stress: z.number().nullable(), training_stress_method: z.string().nullable(), trimp: z.number().nullable(),
@@ -74,6 +77,12 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
   const uid = user.id;
   const today = () => (deps.today ?? todayLocal)();
   const resolveRange = (q: { from?: string; to?: string }, days: number) => defaultRange(q.from, q.to, days, today());
+  /** The user's own sport by name -> filter; `undefined` id with an error message when the name is unknown. */
+  const resolveCustomSport = (name: string | undefined): { customSportId?: number; error?: string } => {
+    if (name === undefined) return {};
+    const id = repos.customSports.idByName(uid, name);
+    return id === undefined ? { error: `Unknown custom sport '${name}'. Known: ${repos.customSports.list(uid).map((s) => s.name).join(", ") || "none"}.` } : { customSportId: id };
+  };
   const rangeError = (r: { from: string; to: string }) => (rangeDays(r) < 1 ? "'from' must not be after 'to'" : rangeDays(r) > 3700 ? "range too long (max 10 years)" : null);
 
   server.registerTool(
@@ -82,14 +91,16 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       title: "List activities",
       description: "Lists the user's synced activities (newest first by default) with the main metrics. Filter by sport and date range, page with offset. Use get_activity for the details of one.",
       inputSchema: z.object({
-        sport: sport.optional(), ...range,
+        sport: sport.optional(), custom_sport: customSport, ...range,
         limit: z.number().int().min(1).max(MAX_LIST).default(20), offset: z.number().int().min(0).default(0), order: z.enum(["desc", "asc"]).default("desc"),
       }),
       outputSchema: z.object({ total: z.number(), returned: z.number(), activities: z.array(briefSchema) }),
       annotations: readOnly,
     },
     async (q) => {
-      const f = { sport: q.sport, from: q.from, to: q.to };
+      const cs = resolveCustomSport(q.custom_sport);
+      if (cs.error) return failure(cs.error);
+      const f = { sport: q.sport, customSportId: cs.customSportId, from: q.from, to: q.to, topLevel: true };
       const rows = repos.activities.list(uid, { ...f, limit: q.limit, offset: q.offset, order: q.order });
       return result({ total: repos.activities.count(uid, f), returned: rows.length, activities: rows.map(brief) });
     },
@@ -278,7 +289,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     {
       title: "Get zone distribution",
       description: "Total seconds spent in each heart-rate, power or pace zone over a date range (optionally one sport). Zone bounds are the athlete's settings valid at the time (see get_athlete_settings); activities without a detailed recording use Garmin's own zone times. Pace zones are given as lower bounds in m/s. Default range: last 90 days.",
-      inputSchema: z.object({ kind: z.enum(["hr", "power", "pace"]).default("hr"), sport: sport.optional(), ...range }),
+      inputSchema: z.object({ kind: z.enum(["hr", "power", "pace"]).default("hr"), sport: sport.optional(), custom_sport: customSport, ...range }),
       outputSchema: z.object({ kind: z.string(), activities_counted: z.number(), zone_lower_bounds: z.array(z.number()), seconds_below_zone_1: z.number(), seconds_per_zone: z.array(z.number()), share_per_zone_pct: z.array(z.number()), source: z.string() }),
       annotations: readOnly,
     },
@@ -286,7 +297,9 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       const r = resolveRange(q, 90);
       const err = rangeError(r);
       if (err) return failure(err);
-      const z = zoneDistribution(repos, uid, { ...r, kind: q.kind, sport: q.sport });
+      const cs = resolveCustomSport(q.custom_sport);
+      if (cs.error) return failure(cs.error);
+      const z = zoneDistribution(repos, uid, { ...r, kind: q.kind, sport: q.sport, customSportId: cs.customSportId });
       const total = z.seconds.reduce((a, b) => a + b, 0);
       return result({
         kind: z.kind, activities_counted: z.activities, zone_lower_bounds: z.floors, seconds_below_zone_1: Math.round(z.below), seconds_per_zone: z.seconds.map(Math.round),
@@ -299,8 +312,8 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     "get_volume",
     {
       title: "Get training volume",
-      description: "Training volume per week (starting Monday) or month and sport: number of activities, distance, duration, elevation gain, training stress. `period` is the first day of the period. Default range: last 12 weeks.",
-      inputSchema: z.object({ by: z.enum(["week", "month"]).default("week"), sport: sport.optional(), ...range }),
+      description: "Training volume per week (starting Monday) or month and sport (the athlete's own sport where one is assigned): number of activities, distance, duration, elevation gain, training stress. `period` is the first day of the period. Default range: last 12 weeks.",
+      inputSchema: z.object({ by: z.enum(["week", "month"]).default("week"), sport: sport.optional(), custom_sport: customSport, ...range }),
       outputSchema: z.object({ rows: z.array(z.object({ period: z.string(), sport: z.string(), activities: z.number(), distance_km: z.number(), duration_h: z.number(), elevation_gain_m: z.number(), training_stress: z.number() })) }),
       annotations: readOnly,
     },
@@ -308,7 +321,9 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       const r = resolveRange(q, 84);
       const err = rangeError(r);
       if (err) return failure(err);
-      const rows = volumeInRange(repos, uid, { ...r, by: q.by, sport: q.sport });
+      const cs = resolveCustomSport(q.custom_sport);
+      if (cs.error) return failure(cs.error);
+      const rows = volumeInRange(repos, uid, { ...r, by: q.by, sport: q.sport, customSportId: cs.customSportId });
       return result({ rows: rows.map((v) => ({ period: v.period, sport: v.sport, activities: v.count, distance_km: round(v.distance_m / 1000)!, duration_h: round(v.duration_s / 3600, 2)!, elevation_gain_m: round(v.elevation_gain_m, 0)!, training_stress: round(v.tss, 0)! })) });
     },
   );
@@ -318,7 +333,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     {
       title: "Get best efforts",
       description: "Personal bests in a date range from Garmin's per-activity records. Running: fastest time for 1 km, 1 mile, 5 km, 10 km, half and full marathon. Cycling: best average power for 1 s to 5 h (power curve). Each entry names the activity and date. Default range: last 12 months.",
-      inputSchema: z.object({ sport: z.enum(["running", "cycling"]).default("running"), ...range }),
+      inputSchema: z.object({ sport: z.enum(["running", "cycling"]).default("running"), custom_sport: customSport, ...range }),
       outputSchema: z.object({
         sport: z.string(),
         running: z.array(z.object({ distance_m: z.number(), seconds: z.number(), pace_min_per_km: z.number().nullable(), activity_id: z.number(), date: z.string() })),
@@ -330,7 +345,9 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       const r = resolveRange(q, 365);
       const err = rangeError(r);
       if (err) return failure(err);
-      const b = bestEffortsInRange(repos, uid, { ...r, sport: q.sport });
+      const cs = resolveCustomSport(q.custom_sport);
+      if (cs.error) return failure(cs.error);
+      const b = bestEffortsInRange(repos, uid, { ...r, sport: q.sport, customSportId: cs.customSportId });
       return result({
         sport: q.sport,
         running: b.efforts.map((e) => ({ distance_m: e.distance_m, seconds: round(e.seconds, 1)!, pace_min_per_km: round(e.seconds / 60 / (e.distance_m / 1000), 2), activity_id: e.activity_id, date: e.date })),

@@ -2,7 +2,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { bestEffortsInRange, defaultRange, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
 import type { Repos } from "../repo/index.ts";
 import type { Env } from "../types.ts";
-import { errors, json, MAX_RANGE_DAYS, rangeQuery, sportSchema, userOf } from "./common.ts";
+import { customSportQuery, errors, json, MAX_RANGE_DAYS, rangeQuery, sportSchema, userOf } from "./common.ts";
 
 const DEFAULT_PMC_DAYS = 180;
 const DEFAULT_RANGE_DAYS = 90;
@@ -31,7 +31,7 @@ export function analyticsRoutes(deps: { repos: Repos }) {
       createRoute({
         method: "get",
         path: "/analytics/zones",
-        request: { query: rangeQuery.extend({ kind: z.enum(["hr", "power", "pace"]).default("hr"), sport: sportSchema.optional() }) },
+        request: { query: rangeQuery.extend({ kind: z.enum(["hr", "power", "pace"]).default("hr"), sport: sportSchema.optional(), ...customSportQuery }) },
         responses: {
           200: json(z.object({ kind: z.enum(["hr", "power", "pace"]), activities: z.number(), floors: z.array(z.number()), below: z.number(), seconds: z.array(z.number()), source: z.enum(["samples", "garmin_summary"]) })),
           ...errors(400),
@@ -41,14 +41,14 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         const q = c.req.valid("query");
         const r = defaultRange(q.from, q.to, DEFAULT_RANGE_DAYS);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
-        return c.json(zoneDistribution(repos, userOf(c).id, { ...r, kind: q.kind, sport: q.sport as never }), 200);
+        return c.json(zoneDistribution(repos, userOf(c).id, { ...r, kind: q.kind, sport: q.sport as never, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(
       createRoute({
         method: "get",
         path: "/analytics/volume",
-        request: { query: rangeQuery.extend({ by: z.enum(["week", "month"]).default("week"), sport: sportSchema.optional() }) },
+        request: { query: rangeQuery.extend({ by: z.enum(["week", "month"]).default("week"), sport: sportSchema.optional(), ...customSportQuery }) },
         responses: {
           200: json(z.array(z.object({ period: z.string(), sport: z.string(), count: z.number(), distance_m: z.number(), duration_s: z.number(), elevation_gain_m: z.number(), tss: z.number(), trimp: z.number() }))),
           ...errors(400),
@@ -58,7 +58,7 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         const q = c.req.valid("query");
         const r = defaultRange(q.from, q.to, DEFAULT_PMC_DAYS);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
-        return c.json(volumeInRange(repos, userOf(c).id, { ...r, by: q.by, sport: q.sport as never }), 200);
+        return c.json(volumeInRange(repos, userOf(c).id, { ...r, by: q.by, sport: q.sport as never, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(
@@ -86,7 +86,7 @@ export function analyticsRoutes(deps: { repos: Repos }) {
       createRoute({
         method: "get",
         path: "/analytics/best-efforts",
-        request: { query: rangeQuery.extend({ sport: z.enum(["running", "cycling"]).default("running") }) },
+        request: { query: rangeQuery.extend({ sport: z.enum(["running", "cycling"]).default("running"), ...customSportQuery }) },
         responses: {
           200: json(z.object({
             sport: z.enum(["running", "cycling"]),
@@ -100,7 +100,7 @@ export function analyticsRoutes(deps: { repos: Repos }) {
         const q = c.req.valid("query");
         const r = defaultRange(q.from, q.to, 365);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
-        return c.json(bestEffortsInRange(repos, userOf(c).id, { ...r, sport: q.sport }), 200);
+        return c.json(bestEffortsInRange(repos, userOf(c).id, { ...r, sport: q.sport, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(

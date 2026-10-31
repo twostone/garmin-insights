@@ -5,7 +5,7 @@ import { strengthVolume } from "../analytics/strength.ts";
 import type { FitStore } from "../fit/store.ts";
 import type { Repos } from "../repo/index.ts";
 import type { Env } from "../types.ts";
-import { dateSchema, errors, idParam, json, sportSchema, userOf } from "./common.ts";
+import { customSportQuery, dateSchema, errors, idParam, json, sportSchema, userOf } from "./common.ts";
 
 const activitySchema = z.object({
   id: z.number(), start_utc: z.string(), date: z.string(), name: z.string().nullable(), type_key: z.string(), sport: z.string(),
@@ -15,6 +15,8 @@ const activitySchema = z.object({
   te_aerobic: z.number().nullable(), te_anaerobic: z.number().nullable(), start_lat: z.number().nullable(), start_lon: z.number().nullable(),
   total_sets: z.number().nullable(), total_reps: z.number().nullable(),
   fit_status: z.enum(["pending", "done", "none", "failed"]), trimp: z.number().nullable(), tss: z.number().nullable(), tss_method: z.string().nullable(),
+  custom_sport_id: z.number().nullable(), custom_sport: z.string().nullable(), group_key: z.string(),
+  parent_id: z.number().nullable(), is_multisport_parent: z.number(), max_hr_clean: z.number().nullable(), hr_artifact_s: z.number().nullable(),
 });
 
 const sampleSchema = z.object({
@@ -44,7 +46,7 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
         path: "/activities",
         request: {
           query: z.object({
-            sport: sportSchema.optional(), from: dateSchema.optional(), to: dateSchema.optional(),
+            sport: sportSchema.optional(), ...customSportQuery, from: dateSchema.optional(), to: dateSchema.optional(),
             limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0),
             order: z.enum(["asc", "desc"]).default("desc"),
           }),
@@ -53,7 +55,7 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
       }),
       (c) => {
         const q = c.req.valid("query");
-        const f = { sport: q.sport as never, from: q.from, to: q.to };
+        const f = { sport: q.sport as never, customSportId: q.custom_sport_id, from: q.from, to: q.to, topLevel: true };
         const id = userOf(c).id;
         return c.json({ items: repos.activities.list(id, { ...f, limit: q.limit, offset: q.offset, order: q.order }), total: repos.activities.count(id, f) }, 200);
       },

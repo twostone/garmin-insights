@@ -38,17 +38,65 @@ const SUMMARY_COLUMNS = [
   "total_sets", "total_reps", "summary_json",
 ] as const;
 
-// Everything but the raw JSON: list and analytics queries stay small.
-const LIGHT_COLUMNS = ["id", ...SUMMARY_COLUMNS.filter((c) => c !== "summary_json"), "fit_status", "trimp", "tss", "tss_method"].join(", ");
+// Columns the sync never writes: the user's own sport, the multisport link and the HR cleaning results survive every re-sync.
+const DERIVED_COLUMNS = ["fit_status", "trimp", "tss", "tss_method", "custom_sport_id", "parent_id", "is_multisport_parent", "max_hr_clean", "hr_artifact_s"] as const;
+
+// Everything but the raw JSON (list and analytics queries stay small), plus the name of the user's own sport.
+const LIGHT_COLUMNS = [
+  ...["id", ...SUMMARY_COLUMNS.filter((c) => c !== "summary_json"), ...DERIVED_COLUMNS].map((c) => `a.${c}`),
+  "cs.name AS custom_sport",
+  "COALESCE(cs.name, a.sport) AS group_key",
+].join(", ");
+const FROM_ACTIVITIES = "activities a LEFT JOIN custom_sports cs ON cs.user_id = a.user_id AND cs.id = a.custom_sport_id";
+
+/**
+ * Activities that count in load, volume, zones and bests: multisport legs count, their parent does not (it would count the
+ * same time twice). A parent without synced legs still counts as one activity.
+ */
+export const COUNTED = `NOT (a.is_multisport_parent = 1 AND EXISTS (SELECT 1 FROM activities leg WHERE leg.user_id = a.user_id AND leg.parent_id = a.id))`;
 
 export type ActivityRow = Omit<ActivityInput, "summary_json"> & {
   fit_status: FitStatus;
   trimp: number | null;
   tss: number | null;
   tss_method: string | null;
+  custom_sport_id: number | null;
+  /** Name of the user's own sport, if one is assigned. */
+  custom_sport: string | null;
+  /** What analyses group by: the user's own sport if assigned, else the Garmin-derived sport. */
+  group_key: string;
+  parent_id: number | null;
+  is_multisport_parent: 0 | 1;
+  max_hr_clean: number | null;
+  hr_artifact_s: number | null;
 };
 
-export type ListFilter = { sport?: Sport; from?: string; to?: string; limit?: number; offset?: number; order?: "asc" | "desc" };
+/** Which activities an analysis looks at: a Garmin-derived sport, the user's own sport, or both. */
+export type SportFilter = { sport?: Sport; customSportId?: number };
+
+export type ListFilter = SportFilter & {
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+  order?: "asc" | "desc";
+  /** Listing view: multisport legs are left out (they hang under their parent). */
+  topLevel?: boolean;
+  /** Analysis view: only activities that count (see COUNTED). */
+  counted?: boolean;
+};
+
+function whereOf(userId: string, f: Omit<ListFilter, "limit" | "offset" | "order">): { sql: string; args: SQLInputValue[] } {
+  const where = ["a.user_id = ?"];
+  const args: SQLInputValue[] = [userId];
+  if (f.sport) (where.push("a.sport = ?"), args.push(f.sport));
+  if (f.customSportId !== undefined) (where.push("a.custom_sport_id = ?"), args.push(f.customSportId));
+  if (f.from) (where.push("a.date >= ?"), args.push(f.from));
+  if (f.to) (where.push("a.date <= ?"), args.push(f.to));
+  if (f.topLevel) where.push("a.parent_id IS NULL");
+  if (f.counted) where.push(COUNTED);
+  return { sql: where.join(" AND "), args };
+}
 
 export type SampleRow = {
   t: number; lat: number | null; lon: number | null; alt: number | null; hr: number | null; power: number | null;
@@ -70,7 +118,7 @@ export function activitiesRepo(db: DatabaseSync) {
      ON CONFLICT(user_id, id) DO UPDATE SET ${SUMMARY_COLUMNS.map((c) => `${c} = excluded.${c}`).join(", ")}`,
   );
   const exists = db.prepare("SELECT 1 AS x FROM activities WHERE user_id = ? AND id = ?");
-  const getLight = db.prepare(`SELECT ${LIGHT_COLUMNS} FROM activities WHERE user_id = ? AND id = ?`);
+  const getLight = db.prepare(`SELECT ${LIGHT_COLUMNS} FROM ${FROM_ACTIVITIES} WHERE a.user_id = ? AND a.id = ?`);
   const getSummary = db.prepare("SELECT summary_json FROM activities WHERE user_id = ? AND id = ?");
 
   const insertSample = db.prepare(
@@ -92,24 +140,15 @@ export function activitiesRepo(db: DatabaseSync) {
     summaryJson: (userId: string, id: number): string | undefined => (getSummary.get(userId, id) as { summary_json: string } | undefined)?.summary_json,
 
     list(userId: string, f: ListFilter = {}): ActivityRow[] {
-      const where = ["user_id = ?"];
-      const args: SQLInputValue[] = [userId];
-      if (f.sport) (where.push("sport = ?"), args.push(f.sport));
-      if (f.from) (where.push("date >= ?"), args.push(f.from));
-      if (f.to) (where.push("date <= ?"), args.push(f.to));
+      const { sql, args } = whereOf(userId, f);
       const dir = f.order === "asc" ? "ASC" : "DESC";
-      args.push(f.limit ?? 50, f.offset ?? 0);
       return db
-        .prepare(`SELECT ${LIGHT_COLUMNS} FROM activities WHERE ${where.join(" AND ")} ORDER BY start_utc ${dir} LIMIT ? OFFSET ?`)
-        .all(...args) as ActivityRow[];
+        .prepare(`SELECT ${LIGHT_COLUMNS} FROM ${FROM_ACTIVITIES} WHERE ${sql} ORDER BY a.start_utc ${dir} LIMIT ? OFFSET ?`)
+        .all(...args, f.limit ?? 50, f.offset ?? 0) as ActivityRow[];
     },
-    count(userId: string, f: Pick<ListFilter, "sport" | "from" | "to"> = {}): number {
-      const where = ["user_id = ?"];
-      const args: SQLInputValue[] = [userId];
-      if (f.sport) (where.push("sport = ?"), args.push(f.sport));
-      if (f.from) (where.push("date >= ?"), args.push(f.from));
-      if (f.to) (where.push("date <= ?"), args.push(f.to));
-      return (db.prepare(`SELECT COUNT(*) AS n FROM activities WHERE ${where.join(" AND ")}`).get(...args) as { n: number }).n;
+    count(userId: string, f: Omit<ListFilter, "limit" | "offset" | "order"> = {}): number {
+      const { sql, args } = whereOf(userId, f);
+      return (db.prepare(`SELECT COUNT(*) AS n FROM activities a WHERE ${sql}`).get(...args) as { n: number }).n;
     },
     /** Per-day totals for the calendar view. */
     calendar(userId: string, from: string, to: string): { date: string; count: number; duration_s: number; distance_m: number; tss: number }[] {
@@ -117,7 +156,7 @@ export function activitiesRepo(db: DatabaseSync) {
         .prepare(
           `SELECT date, COUNT(*) AS count, COALESCE(SUM(duration_s), 0) AS duration_s, COALESCE(SUM(distance_m), 0) AS distance_m,
                   COALESCE(SUM(tss), 0) AS tss
-           FROM activities WHERE user_id = ? AND date >= ? AND date <= ? GROUP BY date ORDER BY date`,
+           FROM activities a WHERE a.user_id = ? AND a.date >= ? AND a.date <= ? AND ${COUNTED} GROUP BY a.date ORDER BY a.date`,
         )
         .all(userId, from, to) as { date: string; count: number; duration_s: number; distance_m: number; tss: number }[];
     },
@@ -132,13 +171,13 @@ export function activitiesRepo(db: DatabaseSync) {
       void db.prepare("UPDATE activities SET trimp = ?, tss = ?, tss_method = ? WHERE user_id = ? AND id = ?").run(load.trimp, load.tss, load.tss_method, userId, id),
     /** Highest heart rate ever recorded: the fallback for HR max when the athlete has none configured. */
     maxHr: (userId: string): number | null =>
-      (db.prepare("SELECT MAX(max_hr) AS m FROM activities WHERE user_id = ?").get(userId) as { m: number | null }).m,
+      (db.prepare("SELECT MAX(COALESCE(max_hr_clean, max_hr)) AS m FROM activities WHERE user_id = ?").get(userId) as { m: number | null }).m,
     /** Summed load per day, from the per-activity values. */
     dailyLoad: (userId: string, from: string, to: string): { date: string; trimp: number; tss: number }[] =>
       db
         .prepare(
-          `SELECT date, COALESCE(SUM(trimp), 0) AS trimp, COALESCE(SUM(tss), 0) AS tss FROM activities
-           WHERE user_id = ? AND date >= ? AND date <= ? GROUP BY date ORDER BY date`,
+          `SELECT a.date, COALESCE(SUM(a.trimp), 0) AS trimp, COALESCE(SUM(a.tss), 0) AS tss FROM activities a
+           WHERE a.user_id = ? AND a.date >= ? AND a.date <= ? AND ${COUNTED} GROUP BY a.date ORDER BY a.date`,
         )
         .all(userId, from, to) as { date: string; trimp: number; tss: number }[],
     /** Oldest and newest activity date, for the range pickers. */

@@ -3,6 +3,7 @@ import { transaction } from "../db.ts";
 import { activitiesRepo } from "./activities.ts";
 import { analyticsRepo } from "./analytics.ts";
 import { athleteRepo } from "./athlete.ts";
+import { customSportsRepo } from "./custom-sports.ts";
 import { healthRepo } from "./health.ts";
 import { keysRepo } from "./keys.ts";
 import { syncStateRepo } from "./sync-state.ts";
@@ -18,6 +19,7 @@ export function createRepos(db: DatabaseSync) {
     activities: activitiesRepo(db),
     health: healthRepo(db),
     athlete: athleteRepo(db),
+    customSports: customSportsRepo(db),
     analytics: analyticsRepo(db),
   };
   return {

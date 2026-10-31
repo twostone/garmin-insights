@@ -1,5 +1,5 @@
 import { addDays, diffDays, todayLocal, weekStart } from "../dates.ts";
-import type { ActivityRow } from "../repo/activities.ts";
+import type { ActivityRow, SportFilter } from "../repo/activities.ts";
 import type { AthleteSettings } from "../repo/athlete.ts";
 import type { Repos } from "../repo/index.ts";
 import { bestEfforts, decoupling, meanMaxPower, POWER_DURATIONS_S, RUN_DISTANCES_M, type BestEffort, type MeanMax } from "./efforts.ts";
@@ -52,8 +52,8 @@ function zonesForActivity(repos: Repos, userId: string, a: ActivityRow, kind: Zo
   return null;
 }
 
-export function zoneDistribution(repos: Repos, userId: string, o: { from: string; to: string; sport?: ActivityRow["sport"]; kind: ZoneKind }) {
-  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, limit: 1000, order: "asc" });
+export function zoneDistribution(repos: Repos, userId: string, o: SportFilter & { from: string; to: string; kind: ZoneKind }) {
+  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 1000, order: "asc" });
   let total: ZoneResult | null = null;
   let count = 0;
   for (const a of activities) {
@@ -99,8 +99,8 @@ export function activityAnalysis(repos: Repos, userId: string, a: ActivityRow): 
 const SPLIT_DISTANCES = [1000, 1609, 5000, 10000, 21098, 42195] as const;
 export type RangeBest = { activity_id: number; date: string };
 
-export function bestEffortsInRange(repos: Repos, userId: string, o: { from: string; to: string; sport: "running" | "cycling" }) {
-  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, limit: 5000, order: "asc" });
+export function bestEffortsInRange(repos: Repos, userId: string, o: { from: string; to: string; sport: "running" | "cycling"; customSportId?: number }) {
+  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 5000, order: "asc" });
   const run = new Map<number, { seconds: number } & RangeBest>();
   const ride = new Map<number, { watts: number } & RangeBest>();
   for (const a of activities) {
@@ -125,8 +125,10 @@ export function bestEffortsInRange(repos: Repos, userId: string, o: { from: stri
 }
 export { RUN_DISTANCES_M };
 
-export function volumeInRange(repos: Repos, userId: string, o: { from: string; to: string; by: "week" | "month"; sport?: ActivityRow["sport"] }) {
-  return volumeBy(repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, limit: 100_000, order: "asc" }), o.by);
+/** Volume grouped by the user's own sport where one is assigned, else by the Garmin-derived sport. */
+export function volumeInRange(repos: Repos, userId: string, o: SportFilter & { from: string; to: string; by: "week" | "month" }) {
+  const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 100_000, order: "asc" });
+  return volumeBy(activities.map((a) => ({ ...a, sport: a.group_key })), o.by);
 }
 
 export function strengthInRange(repos: Repos, userId: string, o: { from: string; to: string }) {

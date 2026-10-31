@@ -8,7 +8,7 @@
   import { sync } from "$lib/sync.svelte.ts";
   import type { ActivityLite } from "$lib/types.ts";
 
-  const SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "other"] as const;
+  const SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "paddling", "rowing", "other"] as const;
   const PAGE = 30;
 
   let sport = $state<string | null>(null);

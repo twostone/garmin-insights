@@ -76,6 +76,8 @@
   "sport_strength": "Strength",
   "sport_walking": "Walking",
   "sport_hiking": "Hiking",
+  "sport_paddling": "Paddling",
+  "sport_rowing": "Rowing",
   "sport_other": "Other",
   "filter_sport": "Sport",
   "filter_all": "All",

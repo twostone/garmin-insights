@@ -1,6 +1,6 @@
 // Garmin activity type keys -> the handful of sports the app analyses differently.
-export type Sport = "running" | "cycling" | "swimming" | "strength" | "walking" | "hiking" | "other";
-export const SPORTS: readonly Sport[] = ["running", "cycling", "swimming", "strength", "walking", "hiking", "other"];
+export type Sport = "running" | "cycling" | "swimming" | "strength" | "walking" | "hiking" | "paddling" | "rowing" | "other";
+export const SPORTS: readonly Sport[] = ["running", "cycling", "swimming", "strength", "walking", "hiking", "paddling", "rowing", "other"];
 
 const BY_KEY: Record<string, Sport> = {
   running: "running",
@@ -29,10 +29,26 @@ const BY_KEY: Record<string, Sport> = {
   casual_walking: "walking",
   speed_walking: "walking",
   hiking: "hiking",
+  rowing: "rowing",
+  rowing_v2: "rowing",
+  indoor_rowing: "rowing",
 };
 
+// Garmin versions some paddle types (stand_up_paddleboarding_v2, kayaking_v2, …): these match by prefix.
+const BY_PREFIX: [string, Sport][] = [
+  ["stand_up_paddleboarding", "paddling"],
+  ["kayaking", "paddling"],
+  ["canoeing", "paddling"],
+  ["whitewater", "paddling"],
+  ["paddling", "paddling"],
+  ["outrigger", "paddling"],
+  ["dragon_boat", "paddling"],
+];
+
 export function sportOf(typeKey: string | null | undefined): Sport {
-  return (typeKey && BY_KEY[typeKey.toLowerCase()]) || "other";
+  if (!typeKey) return "other";
+  const key = typeKey.toLowerCase();
+  return BY_KEY[key] ?? BY_PREFIX.find(([prefix]) => key.startsWith(prefix))?.[1] ?? "other";
 }
 
 export const isSport = (value: string): value is Sport => (SPORTS as readonly string[]).includes(value);

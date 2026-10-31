@@ -3,16 +3,21 @@
   import { api, unwrap } from "$lib/api.ts";
   import { pmcOption, volumeOption, zoneOption } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
+  import LoadHeatmap from "$lib/components/LoadHeatmap.svelte";
+  import PaddlingCard from "$lib/components/PaddlingCard.svelte";
+  import SportFilter from "$lib/components/SportFilter.svelte";
+  import WeeklyBalanceCard from "$lib/components/WeeklyBalanceCard.svelte";
   import { addDays, dateLabel, duration, num, pace, today } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
-  import type { Zone } from "$lib/types.ts";
+  import type { SportFilterValue, Zone } from "$lib/types.ts";
 
   const RANGES = [90, 180, 365, 1825] as const;
   let days = $state<number>(180);
   let metric = $state<"hours" | "km">("hours");
   let bestSport = $state<"running" | "cycling">("running");
   let zoneKind = $state<"hr" | "power" | "pace">("hr");
+  let sportFilter = $state<SportFilterValue>({});
   const to = today();
   const from = $derived(addDays(to, -(days - 1)));
 
@@ -50,12 +55,17 @@
     <button type="button" class="chip" aria-pressed={days === d} onclick={() => (days = d)}>{rangeLabel(d)}</button>
   {/each}
 </div>
+<SportFilter bind:value={sportFilter} />
 
 <section class="card">
   <h2>{m.trends_pmc()}</h2>
   {#if pmc.data?.length}<Chart option={pmcOption(pmc.data)} height={300} label={m.chart_pmc_label()} />{:else if !pmc.loading}<p class="muted">{m.empty_data()}</p>{/if}
   <p class="muted small">{m.trends_pmc_hint()}</p>
 </section>
+
+<LoadHeatmap {to} />
+<WeeklyBalanceCard {from} {to} filter={sportFilter} />
+<PaddlingCard {from} {to} filter={sportFilter} />
 
 <section class="card">
   <div class="row between">
