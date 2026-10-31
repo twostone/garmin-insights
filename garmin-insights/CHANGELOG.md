@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/twostone/garmin-insights/compare/v0.3.0...v0.4.0) (2026-10-31)
+
+
+### Neu
+
+* **web:** eigene Sportarten übersichtlicher und für das Handy optimiert ([#10](https://github.com/twostone/garmin-insights/issues/10)) ([538d97f](https://github.com/twostone/garmin-insights/commit/538d97fe7a625591d996ac57111c7f3cc7e86bed))
+
 ## [0.3.0](https://github.com/twostone/garmin-insights/compare/v0.2.0...v0.3.0) (2026-10-31)
 
 
