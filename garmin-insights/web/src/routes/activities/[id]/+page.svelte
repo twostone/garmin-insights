@@ -85,7 +85,7 @@
       {#if isRun && a.avg_speed}<div><div class="v">{pace(a.avg_speed)}</div><div class="l">{m.metric_pace()}</div></div>
       {:else if a.avg_speed && a.sport === "cycling"}<div><div class="v">{kmh(a.avg_speed)}</div><div class="l">{m.metric_speed()}</div></div>{/if}
       {#if a.avg_hr}<div><div class="v">{num(a.avg_hr)}</div><div class="l">{m.metric_avg_hr()}</div></div>{/if}
-      {#if a.max_hr}<div><div class="v">{num(a.max_hr)}</div><div class="l">{m.metric_max_hr()}</div></div>{/if}
+      {#if a.max_hr_clean ?? a.max_hr}<div><div class="v">{num(a.max_hr_clean ?? a.max_hr)}</div><div class="l">{m.metric_max_hr()}</div></div>{/if}
       {#if a.avg_power}<div><div class="v">{num(a.avg_power)} W</div><div class="l">{m.metric_avg_power()}</div></div>{/if}
       {#if a.norm_power}<div><div class="v">{num(a.norm_power)} W</div><div class="l">{m.metric_np()}</div></div>{/if}
       {#if a.elevation_gain_m}<div><div class="v">{meters(a.elevation_gain_m)}</div><div class="l">{m.metric_ascent()}</div></div>{/if}
@@ -104,6 +104,9 @@
     <p class="banner" role="status">{m.detail_fit_pending()}</p>
   {:else if a.fit_status === "none" || a.fit_status === "failed"}
     <p class="muted small">{m.detail_fit_missing()}</p>
+  {/if}
+  {#if a.hr_artifact_s}
+    <p class="muted small">{m.detail_hr_cleaned({ clean: num(a.max_hr_clean ?? a.max_hr), raw: num(a.max_hr), seconds: num(a.hr_artifact_s) })}</p>
   {/if}
 
   {#if route.length > 1}

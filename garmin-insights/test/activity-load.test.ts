@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { activityLoad } from "../src/analytics/activity-load.ts";
-import { recomputeLoads } from "../src/analytics/recompute.ts";
+import { recomputeLoads, recomputeUncleanedHr } from "../src/analytics/recompute.ts";
 import { activity, memoryRepos, seedUser } from "./helpers.ts";
 import type { Sample } from "../src/analytics/load.ts";
 
@@ -72,4 +72,48 @@ test("recompute: loads per activity with the settings valid that day, daily PMC 
   const last = repos.analytics.range("u", "2026-10-06", "2026-10-06")[0]!;
   assert.equal(last.tss, 25);
   assert.ok(last.ctl > before[4]!.ctl * (1 - 1 / 42) );
+});
+
+test("recompute cleans HR artifacts: stored max_hr_clean and hr_artifact_s, load and historic max without the spike", () => {
+  const repos = memoryRepos();
+  seedUser(repos, "u");
+  const rows = (spike: boolean) =>
+    Array.from({ length: 3600 }, (_, t) => ({ t, lat: null, lon: null, alt: null, hr: spike && t === 1000 ? 230 : 140, power: null, cadence: null, speed: null, dist: null, temp: null }));
+  const rowing = (id: number, date: string, maxHr: number) => activity(id, date, { sport: "other", type_key: "indoor_rowing", duration_s: 3600, avg_hr: 140, max_hr: maxHr });
+  for (const [id, spike] of [[1, true], [2, false]] as const) {
+    repos.activities.upsertSummary("u", rowing(id, "2026-10-01", spike ? 230 : 140));
+    repos.activities.replaceDetail("u", id, { samples: rows(spike), laps: [], sets: [] });
+    repos.activities.setFitStatus("u", id, "done");
+  }
+  assert.equal(repos.activities.hrUncleaned("u").length, 2);
+  // No HR max configured: only the jump rule, and the historic max (fallback) must already be the cleaned one.
+  recomputeLoads(repos, "u", "2026-10-01", "2026-10-01");
+  const spiky = repos.activities.get("u", 1)!;
+  const clean = repos.activities.get("u", 2)!;
+  assert.equal(spiky.max_hr_clean, 140);
+  assert.equal(spiky.hr_artifact_s, 1);
+  assert.equal(spiky.max_hr, 230, "raw value stays");
+  assert.equal(clean.max_hr_clean, null, "nothing removed: Garmin's max stays the reference");
+  assert.equal(clean.hr_artifact_s, 0, "checked");
+  assert.equal(repos.activities.maxHr("u"), 140);
+  close(spiky.trimp!, clean.trimp!, 0.1); // one second at 140 less
+  close(spiky.tss!, clean.tss!, 0.1);
+  assert.deepEqual(repos.activities.hrUncleaned("u"), []);
+});
+
+test("existing data: recomputeUncleanedHr recomputes from the oldest unchecked activity once, then does nothing", () => {
+  const repos = memoryRepos();
+  seedUser(repos, "u");
+  repos.athlete.upsert("u", { valid_from: "2026-01-01", hr_max: 176, hr_rest: 50, lthr: 160, ftp: null, threshold_pace_s_per_km: null, sex: null, zones_json: null, source: "manual" });
+  const hr = [...Array(60).fill(172), 175, 180, 183, 183, 182, 178, ...Array(60).fill(172)];
+  repos.activities.upsertSummary("u", activity(1, "2026-10-10", { sport: "other", type_key: "cardio", duration_s: hr.length, avg_hr: 172, max_hr: 183 }));
+  repos.activities.replaceDetail("u", 1, { samples: hr.map((v, t) => ({ t, lat: null, lon: null, alt: null, hr: v, power: null, cadence: null, speed: null, dist: null, temp: null })), laps: [], sets: [] });
+  repos.activities.setFitStatus("u", 1, "done");
+  recomputeUncleanedHr(repos, "u", "2026-10-12");
+  assert.equal(repos.activities.get("u", 1)!.max_hr_clean, 180);
+  assert.equal(repos.activities.get("u", 1)!.hr_artifact_s, 3);
+  assert.equal(repos.analytics.range("u", "2026-10-10", "2026-10-12").length, 3, "PMC from that day on");
+  repos.activities.setLoad("u", 1, { trimp: 1, tss: 1, tss_method: "marker" });
+  recomputeUncleanedHr(repos, "u", "2026-10-12");
+  assert.equal(repos.activities.get("u", 1)!.tss_method, "marker", "second start: nothing to do");
 });

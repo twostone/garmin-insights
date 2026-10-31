@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { downsample } from "../analytics/downsample.ts";
 import { activityAnalysis, parseSummary } from "../analytics/queries.ts";
+import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import type { FitStore } from "../fit/store.ts";
 import type { Repos } from "../repo/index.ts";
@@ -95,6 +96,8 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
           query: z.object({
             from: z.coerce.number().int().min(0).optional(), to: z.coerce.number().int().min(0).optional(),
             max_points: z.coerce.number().int().min(10).max(MAX_SAMPLES).default(DEFAULT_SAMPLES),
+            // Heart-rate artifacts are null (a gap in the chart) unless the raw recording is asked for.
+            clean_hr: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
           }),
         },
         responses: { 200: json(z.object({ total: z.number(), samples: z.array(sampleSchema) })), ...errors(404) },
@@ -103,8 +106,10 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
         const user = userOf(c).id;
         const { id } = c.req.valid("param");
         const q = c.req.valid("query");
-        if (!repos.activities.has(user, id)) return c.json({ error: "not_found" }, 404);
-        const rows = repos.activities.samples(user, id, { from: q.from, to: q.to });
+        const activity = repos.activities.get(user, id);
+        if (!activity) return c.json({ error: "not_found" }, 404);
+        const win = { from: q.from, to: q.to };
+        const rows = q.clean_hr ? analysisSamples(repos, user, activity, win) : repos.activities.samples(user, id, win);
         return c.json({ total: rows.length, samples: downsample(rows, q.max_points) }, 200);
       },
     )

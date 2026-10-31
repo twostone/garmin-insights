@@ -6,6 +6,7 @@ export type ActivityFull = ActivityLite & {
   avg_power: number | null; norm_power: number | null; avg_speed: number | null; max_speed: number | null; calories: number | null; vo2max: number | null;
   te_aerobic: number | null; te_anaerobic: number | null; start_lat: number | null; start_lon: number | null; total_sets: number | null; total_reps: number | null;
   fit_status: "pending" | "done" | "none" | "failed"; trimp: number | null; tss_method: string | null;
+  max_hr_clean: number | null; hr_artifact_s: number | null;
 };
 export type Sample = { t: number; lat: number | null; lon: number | null; alt: number | null; hr: number | null; power: number | null; cadence: number | null; speed: number | null; dist: number | null; temp: number | null };
 export type Lap = { idx: number; start_s: number | null; duration_s: number | null; distance_m: number | null; avg_hr: number | null; max_hr: number | null; avg_power: number | null; avg_speed: number | null; avg_cadence: number | null; ascent_m: number | null };

@@ -5,6 +5,7 @@ import type { Repos } from "../repo/index.ts";
 import { bestEfforts, decoupling, meanMaxPower, POWER_DURATIONS_S, RUN_DISTANCES_M, type BestEffort, type MeanMax } from "./efforts.ts";
 import { healthTrends } from "./health.ts";
 import { perSecond, type Sample } from "./load.ts";
+import { analysisSamples } from "./recompute.ts";
 import { strengthVolume } from "./strength.ts";
 import { volumeBy } from "./volume.ts";
 import { hrZonesFromMax, paceZonesFromThreshold, powerZonesFromFtp, timeInZones, type ZoneConfig } from "./zones.ts";
@@ -39,7 +40,7 @@ export type ZoneResult = { kind: ZoneKind; floors: number[]; below: number; seco
 function zonesForActivity(repos: Repos, userId: string, a: ActivityRow, kind: ZoneKind): ZoneResult | null {
   const floors = zoneFloors(repos.athlete.at(userId, a.date), kind);
   if (a.fit_status === "done" && floors) {
-    const t = timeInZones(repos.activities.samples(userId, a.id), pickers[kind], floors);
+    const t = timeInZones(analysisSamples(repos, userId, a), pickers[kind], floors);
     if (t.zones.some(Boolean) || t.below) return { kind, floors, below: t.below, seconds: t.zones, source: "samples" };
   }
   // Without a FIT file, Garmin's own per-zone times from the summary are the next best thing (their zone boundaries, not ours).
@@ -82,7 +83,7 @@ const WARMUP_MIN_DURATION_S = 2400;
 
 export function activityAnalysis(repos: Repos, userId: string, a: ActivityRow): ActivityAnalysis {
   const hasSamples = a.fit_status === "done";
-  const samples = hasSamples ? repos.activities.samples(userId, a.id) : [];
+  const samples = hasSamples ? analysisSamples(repos, userId, a) : [];
   const power = perSecond(samples, (s) => s.power);
   const usePower = a.sport === "cycling" && power.length > 0;
   const warmupS = (a.duration_s ?? 0) >= WARMUP_MIN_DURATION_S ? WARMUP_S : 0;

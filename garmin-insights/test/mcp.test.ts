@@ -100,6 +100,24 @@ test("get_activity_samples: columns, downsampling, window and field selection", 
   assert.equal((await call(c, "get_activity_samples", { activity_id: 3 })).isError, true, "no detail file for activity 3");
 });
 
+test("HR artifacts: brief reports the cleaned max with the raw one; samples are cleaned unless clean_hr is false", async () => {
+  const t = services();
+  const samples = t.repos.activities.samples("alice", 1).map((s) => (s.t === 300 ? { ...s, hr: 201 } : s));
+  t.repos.activities.replaceDetail("alice", 1, { samples, laps: t.repos.activities.laps("alice", 1), sets: [] });
+  const { recomputeLoads } = await import("../src/analytics/recompute.ts");
+  recomputeLoads(t.repos, "alice", "2026-10-01", "2026-10-30");
+  const c = await connect(t, "alice");
+  const a = (await call(c, "get_activity", { activity_id: 1 })).structuredContent!.activity;
+  assert.equal(a.max_hr_bpm, 160, "cleaned max from the recording");
+  assert.equal(a.max_hr_raw_bpm, 175, "Garmin's value as recorded");
+  assert.equal(a.hr_artifact_s, 1);
+  const plain = (await call(c, "list_activities", { from: "2026-10-10", to: "2026-10-10" })).structuredContent!.activities[0];
+  assert.deepEqual([plain.max_hr_bpm, plain.max_hr_raw_bpm, plain.hr_artifact_s], [175, 175, null], "no recording: raw value, not checked");
+  const window = { activity_id: 1, from_s: 299, to_s: 301, fields: ["hr"] };
+  assert.deepEqual((await call(c, "get_activity_samples", window)).structuredContent!.series.hr, [150, null, 150]);
+  assert.deepEqual((await call(c, "get_activity_samples", { ...window, clean_hr: false })).structuredContent!.series.hr, [150, 201, 150]);
+});
+
 test("get_strength_sets and compare_activities", async () => {
   const c = await connect(services(), "alice");
   const s = (await call(c, "get_strength_sets", { activity_id: 2 })).structuredContent!;
