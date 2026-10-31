@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/twostone/garmin-insights/compare/v0.2.0...v0.3.0) (2026-10-31)
+
+
+### Neu
+
+* eigene Sportarten, Multisport-Teilaktivitäten, HF-Bereinigung und neue Auswertungen ([#8](https://github.com/twostone/garmin-insights/issues/8)) ([42ed45d](https://github.com/twostone/garmin-insights/commit/42ed45d468b0f5d713ba3657342d57c9f58283a1))
+
 ## [0.2.0](https://github.com/twostone/garmin-insights/compare/v0.1.1...v0.2.0) (2026-10-30)
 
 
