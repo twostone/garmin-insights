@@ -56,7 +56,26 @@ export function mapActivity(a: SummarizedActivity): ActivityInput | null {
   };
 }
 
-const hasValue = (row: object, skip: string) => Object.entries(row).some(([k, v]) => k !== skip && v !== null);
+export type MultisportLink = { parent_id: number | null; is_multisport_parent: 0 | 1 };
+
+// The spec's SummarizedActivityDTO (the list endpoint) documents `parentId`, `isParent` and `parent`; `isMultiSportParent` and
+// `childIds` only appear on ActivitySummaryDTO (the single-activity endpoint), so they are read here only in case the list
+// carries them too. The type key `multi_sport` is the last resort for a parent.
+type MaybeMultisportFields = { isMultiSportParent?: unknown; childIds?: unknown; parent?: unknown };
+
+export function mapMultisport(a: SummarizedActivity): MultisportLink {
+  const extra = a as SummarizedActivity & MaybeMultisportFields;
+  const parentId = n(a.parentId);
+  const isParent =
+    extra.isMultiSportParent === true ||
+    a.isParent === true ||
+    extra.parent === true ||
+    (Array.isArray(extra.childIds) && extra.childIds.length > 0) ||
+    a.activityType?.typeKey === "multi_sport";
+  return { parent_id: parentId, is_multisport_parent: isParent && parentId === null ? 1 : 0 };
+}
+
+const hasValue =(row: object, skip: string) => Object.entries(row).some(([k, v]) => k !== skip && v !== null);
 
 export function mapDaily(d: DailySummary): DailyRow | null {
   if (!d.calendarDate) return null;

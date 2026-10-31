@@ -3,15 +3,15 @@
   import { href } from "$lib/nav";
   import { m } from "$lib/paraglide/messages.js";
   import { api, unwrap } from "$lib/api.ts";
-  import { seriesOption, sportName, zoneOption } from "$lib/charts.ts";
+  import { seriesOption, sportName, withLegAreas, zoneOption } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import { dateLabel, duration, kmh, km, meters, num, pace, sportColor, timeLabel } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
-  import type { ActivityFull, Lap, SetRow, Zone } from "$lib/types.ts";
+  import type { ActivityFull, Lap, Leg, SetRow, Zone } from "$lib/types.ts";
 
   const id = $derived(page.params.id ?? "");
-  const detail = new Resource(() => unwrap<{ activity: ActivityFull; summary: Record<string, unknown> }>(api.activities[":id"].$get({ param: { id } })));
+  const detail = new Resource(() => unwrap<{ activity: ActivityFull; summary: Record<string, unknown>; legs: Leg[] }>(api.activities[":id"].$get({ param: { id } })));
   const samples = new Resource(() => unwrap<{ total: number; samples: import("$lib/types.ts").Sample[] }>(api.activities[":id"].samples.$get({ param: { id }, query: { max_points: "1500" } })));
   const laps = new Resource(() => unwrap<Lap[]>(api.activities[":id"].laps.$get({ param: { id } })));
   const strength = new Resource(() => unwrap<{ sets: SetRow[]; byExercise: { exercise: string; sets: number; reps: number; volume_kg: number; max_weight_kg: number | null; best_e1rm_kg: number | null }[]; totalVolumeKg: number }>(api.activities[":id"].strength.$get({ param: { id } })));
@@ -24,6 +24,9 @@
   });
 
   const a = $derived(detail.data?.activity);
+  // Multisport: the legs of a parent, shaded in the time series.
+  const legs = $derived(detail.data?.legs ?? []);
+  const legAreas = $derived(legs.map((l) => ({ ...l, label: sportName(l.sport) })));
   const route = $derived((samples.data?.samples ?? []).filter((s) => s.lat !== null && s.lon !== null).map((s) => [s.lon!, s.lat!] as [number, number]));
   const isRun = $derived(a?.sport === "running" || a?.sport === "walking" || a?.sport === "hiking");
   const zoneLabels = (n: number) => Array.from({ length: n }, (_, i) => m.zone_n({ n: i + 1 }));
@@ -51,6 +54,11 @@
   <h1><span class="dot" style:background={sportColor(a.sport)} style="display:inline-block;width:.7rem;height:1.2rem;border-radius:4px;margin-right:.5rem"></span>{a.name || sportName(a.sport)}</h1>
   <p class="muted">{sportName(a.sport)} · {dateLabel(a.date, { dateStyle: "full" } as Intl.DateTimeFormatOptions)} · {timeLabel(a.start_utc)}</p>
 
+  <!-- Multisport: a leg links back to its parent -->
+  {#if a.parent_id !== null}
+    <p><a href={href("/activities/[id]", { id: String(a.parent_id) })}>↑ {m.detail_parent_link()}</a></p>
+  {/if}
+
   <section class="card">
     <div class="grid cols-4 stat">
       {#if a.distance_m}<div><div class="v">{km(a.distance_m, 2)}</div><div class="l">{m.metric_distance()}</div></div>{/if}
@@ -73,6 +81,24 @@
     </div>
   </section>
 
+  <!-- Multisport: the legs of a parent -->
+  {#if legs.length}
+    <section class="card">
+      <h2>{m.detail_legs()}</h2>
+      <div class="table-scroll"><table>
+        <thead><tr><th>#</th><th>{m.detail_leg_sport()}</th><th class="r">{m.detail_leg_start()}</th><th class="r">{m.metric_duration()}</th><th class="r">{m.metric_avg_hr()}</th><th class="r">{m.metric_tss()}</th></tr></thead>
+        <tbody>{#each legs as l, i (l.id)}
+          <tr>
+            <td>{i + 1}</td>
+            <td><span class="dot" style:background={sportColor(l.sport)} style="display:inline-block;width:.5rem;height:.9rem;border-radius:3px;margin-right:.4rem"></span><a href={href("/activities/[id]", { id: String(l.id) })} style="display:inline-block;min-height:var(--tap);line-height:var(--tap)">{sportName(l.sport)}</a> <span class="muted small">{l.garmin_type.replaceAll("_", " ")}</span></td>
+            <td class="r">{duration(l.start_offset_s)}</td><td class="r">{duration(l.duration_s)}</td><td class="r">{num(l.avg_hr)}</td><td class="r">{num(l.tss, 0)}</td>
+          </tr>
+        {/each}</tbody>
+      </table></div>
+      <p class="muted small">{m.detail_legs_hint()}</p>
+    </section>
+  {/if}
+
   {#if a.fit_status === "pending"}
     <p class="banner" role="status">{m.detail_fit_pending()}</p>
   {:else if a.fit_status === "none" || a.fit_status === "failed"}
@@ -84,7 +110,7 @@
   {/if}
 
   {#if samples.data?.samples.length}
-    <section class="card"><h2>{m.detail_timeseries()}</h2><Chart option={seriesOption(samples.data.samples, a.sport)} height={300} label={m.detail_timeseries()} /></section>
+    <section class="card"><h2>{m.detail_timeseries()}</h2><Chart option={withLegAreas(seriesOption(samples.data.samples, a.sport), samples.data.samples, legAreas)} height={300} label={m.detail_timeseries()} /></section>
   {/if}
 
   {#if analysis.data}
@@ -149,7 +175,8 @@
     </section>
   {/if}
 
-  {#if a.fit_status === "done"}
+  <!-- A leg filled from its parent's file has none of its own; the parent offers the whole file. -->
+  {#if a.fit_status === "done" && a.parent_id === null}
     <p><button type="button" onclick={downloadFit}>{m.detail_download_fit()}</button></p>
   {/if}
 {:else}

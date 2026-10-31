@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { downsample } from "../analytics/downsample.ts";
+import { legOverview, parentAvgHr } from "../analytics/multisport.ts";
 import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import { isDate, todayLocal, weekStart } from "../dates.ts";
@@ -69,6 +70,10 @@ const briefSchema = z.object({
   elevation_gain_m: z.number().nullable(), training_stress: z.number().nullable(), training_stress_method: z.string().nullable(), trimp: z.number().nullable(),
 });
 
+const legSchema = z.object({
+  id: z.number(), sport: z.string(), garmin_type: z.string(), start_offset_s: z.number(), duration_s: z.number().nullable(), avg_hr: z.number().nullable(), tss: z.number().nullable(),
+});
+
 const interpretForm = (tsb: number) =>
   tsb > 15 ? "very fresh (rested or detraining)" : tsb > 5 ? "fresh" : tsb >= -10 ? "neutral" : tsb >= -30 ? "productive training load" : "very fatigued (overreaching risk)";
 
@@ -94,7 +99,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
         sport: sport.optional(), custom_sport: customSport, ...range,
         limit: z.number().int().min(1).max(MAX_LIST).default(20), offset: z.number().int().min(0).default(0), order: z.enum(["desc", "asc"]).default("desc"),
       }),
-      outputSchema: z.object({ total: z.number(), returned: z.number(), activities: z.array(briefSchema) }),
+      outputSchema: z.object({ total: z.number(), returned: z.number(), activities: z.array(briefSchema.extend({ legs_count: z.number().optional() })) }),
       annotations: readOnly,
     },
     async (q) => {
@@ -102,7 +107,13 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       if (cs.error) return failure(cs.error);
       const f = { sport: q.sport, customSportId: cs.customSportId, from: q.from, to: q.to, topLevel: true };
       const rows = repos.activities.list(uid, { ...f, limit: q.limit, offset: q.offset, order: q.order });
-      return result({ total: repos.activities.count(uid, f), returned: rows.length, activities: rows.map(brief) });
+      // Multisport parents: how many legs (see get_activity), and the average HR from them when Garmin sent none.
+      const activities = rows.map((a) => {
+        if (!a.is_multisport_parent) return brief(a);
+        const legs = repos.activities.legs(uid, a.id);
+        return { ...brief({ ...a, avg_hr: parentAvgHr(a, legs) }), legs_count: legs.length };
+      });
+      return result({ total: repos.activities.count(uid, f), returned: rows.length, activities });
     },
   );
 
@@ -111,11 +122,13 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     {
       title: "Get activity",
       description:
-        "Details of one activity: metrics, laps, time in heart-rate/power/pace zones, aerobic decoupling (Pa:Hr, positive = efficiency dropped), best efforts (running), mean-maximal power (cycling) and strength totals. Time series are available through get_activity_samples.",
+        "Details of one activity: metrics, laps, multisport legs (each leg is an activity of its own; a leg names its parent), time in heart-rate/power/pace zones, aerobic decoupling (Pa:Hr, positive = efficiency dropped), best efforts (running), mean-maximal power (cycling) and strength totals. Time series are available through get_activity_samples.",
       inputSchema: z.object({ activity_id: z.number().int().positive() }),
       outputSchema: z.object({
         activity: briefSchema,
         details_available: z.boolean(),
+        parent_activity_id: z.number().nullable(),
+        legs: z.array(legSchema),
         extra: z.object({ calories: z.number().nullable(), vo2max: z.number().nullable(), training_effect_aerobic: z.number().nullable(), training_effect_anaerobic: z.number().nullable() }),
         laps: z.array(z.object({ lap: z.number(), distance_km: z.number().nullable(), duration_s: z.number().nullable(), avg_pace_min_per_km: z.number().nullable(), avg_hr_bpm: z.number().nullable(), avg_power_w: z.number().nullable() })),
         zones: z.record(z.string(), z.object({ zone_lower_bounds: z.array(z.number()), seconds_below_zone_1: z.number(), seconds_per_zone: z.array(z.number()), source: z.string() })),
@@ -137,9 +150,12 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       );
       const sets = repos.activities.sets(uid, activity_id);
       const strength = sets.length ? strengthVolume(sets) : null;
+      const legs = repos.activities.legs(uid, activity_id);
       return result({
-        activity: brief(a),
+        activity: brief({ ...a, avg_hr: parentAvgHr(a, legs) }),
         details_available: a.fit_status === "done",
+        parent_activity_id: a.parent_id,
+        legs: legOverview(a, legs),
         extra: { calories: round(a.calories, 0), vo2max: round(a.vo2max, 0), training_effect_aerobic: round(a.te_aerobic), training_effect_anaerobic: round(a.te_anaerobic) },
         laps: repos.activities.laps(uid, activity_id).slice(0, MAX_LAPS).map((l) => ({
           lap: l.idx + 1, distance_km: round(l.distance_m === null ? null : l.distance_m / 1000, 2), duration_s: round(l.duration_s, 0),

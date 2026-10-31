@@ -125,3 +125,22 @@ export function phaseName(phase: string): string {
   };
   return (names[phase] ?? m.phase_starting)();
 }
+
+/**
+ * Multisport: shades each leg's time span in a time-series option from seriesOption (markArea on the first series, usually
+ * the heart rate). The x axis is a category axis of sample times, so the spans are given as indices of the nearest samples.
+ */
+export function withLegAreas(option: EChartsCoreOption, samples: SamplePoint[], legs: { start_offset_s: number; duration_s: number | null; sport: string; label: string }[]): EChartsCoreOption {
+  const series = (option.series as Record<string, unknown>[] | undefined) ?? [];
+  if (!legs.length || !series.length || !samples.length) return option;
+  const indexAt = (t: number) => {
+    const i = samples.findIndex((s) => s.t >= t);
+    return i < 0 ? samples.length - 1 : i;
+  };
+  const areas = legs.map((l) => [
+    { xAxis: indexAt(l.start_offset_s), name: l.label, itemStyle: { color: sportCssColor(l.sport), opacity: 0.12 } },
+    { xAxis: l.duration_s === null ? samples.length - 1 : indexAt(l.start_offset_s + l.duration_s) },
+  ]);
+  const [first, ...rest] = series;
+  return { ...option, series: [{ ...first, markArea: { silent: true, label: { color: color("--muted"), fontSize: 11 }, data: areas } }, ...rest] };
+}
