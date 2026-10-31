@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { downsample } from "../analytics/downsample.ts";
 import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, rangeDays, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import { isDate, todayLocal, weekStart } from "../dates.ts";
 import type { KeyService } from "../garmin/keys.ts";
@@ -53,7 +54,10 @@ export function brief(a: ActivityRow) {
     // Indoor sessions report 0 m/s; without a distance there is no speed to speak of.
     avg_speed_kmh: a.avg_speed === null || !a.distance_m ? null : round(a.avg_speed * 3.6, 1),
     avg_hr_bpm: round(a.avg_hr, 0),
-    max_hr_bpm: round(a.max_hr, 0),
+    // Cleaned of optical HR artifacts where some were found; the raw value stays available.
+    max_hr_bpm: round(a.max_hr_clean ?? a.max_hr, 0),
+    max_hr_raw_bpm: round(a.max_hr, 0),
+    hr_artifact_s: a.hr_artifact_s,
     avg_power_w: round(a.avg_power, 0),
     normalized_power_w: round(a.norm_power, 0),
     elevation_gain_m: round(a.elevation_gain_m, 0),
@@ -65,7 +69,9 @@ export function brief(a: ActivityRow) {
 const briefSchema = z.object({
   id: z.number(), date: z.string(), start_utc: z.string(), name: z.string().nullable(), sport: z.string(), custom_sport: z.string().nullable(), garmin_type: z.string(),
   distance_km: z.number().nullable(), duration_min: z.number().nullable(), avg_pace_min_per_km: z.number().nullable(), avg_speed_kmh: z.number().nullable(),
-  avg_hr_bpm: z.number().nullable(), max_hr_bpm: z.number().nullable(), avg_power_w: z.number().nullable(), normalized_power_w: z.number().nullable(),
+  avg_hr_bpm: z.number().nullable(), max_hr_bpm: z.number().nullable().describe("cleaned of measurement artifacts"),
+  max_hr_raw_bpm: z.number().nullable().describe("as recorded"), hr_artifact_s: z.number().nullable().describe("seconds of heart rate removed as artifacts; null = not checked"),
+  avg_power_w: z.number().nullable(), normalized_power_w: z.number().nullable(),
   elevation_gain_m: z.number().nullable(), training_stress: z.number().nullable(), training_stress_method: z.string().nullable(), trimp: z.number().nullable(),
 });
 
@@ -160,12 +166,13 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     {
       title: "Get activity time series",
       description:
-        "Second-by-second recordings of an activity as columns, downsampled to max_points (default 300) and optionally cut to a time window. Units: hr bpm, power W, speed m/s, altitude m, cadence rpm/spm, distance m. Use a window (from_s, to_s) to zoom in.",
+        "Second-by-second recordings of an activity as columns, downsampled to max_points (default 300) and optionally cut to a time window. Units: hr bpm, power W, speed m/s, altitude m, cadence rpm/spm, distance m. Use a window (from_s, to_s) to zoom in. Heart-rate artifacts (spikes, drop-outs) are null unless clean_hr is false.",
       inputSchema: z.object({
         activity_id: z.number().int().positive(),
         from_s: z.number().int().min(0).optional().describe("window start, seconds since the activity started"), to_s: z.number().int().min(0).optional(),
         max_points: z.number().int().min(10).max(MAX_SAMPLES).default(DEFAULT_SAMPLES),
         fields: z.array(z.enum(SAMPLE_FIELDS)).min(1).default(["hr", "speed", "power", "altitude"]),
+        clean_hr: z.boolean().default(true).describe("false = raw heart rate including measurement artifacts"),
       }),
       outputSchema: z.object({ activity_id: z.number(), samples_in_window: z.number(), returned: z.number(), t_s: z.array(z.number()), series: z.record(z.string(), z.array(z.number().nullable())) }),
       annotations: readOnly,
@@ -174,7 +181,8 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       const a = repos.activities.get(uid, q.activity_id);
       if (!a) return failure("Activity not found.");
       if (a.fit_status !== "done") return failure("No detailed recording is available for this activity (file missing or still loading).");
-      const rows = repos.activities.samples(uid, q.activity_id, { from: q.from_s, to: q.to_s });
+      const win = { from: q.from_s, to: q.to_s };
+      const rows = q.clean_hr ? analysisSamples(repos, uid, a, win) : repos.activities.samples(uid, q.activity_id, win);
       const picked = downsample(rows, q.max_points);
       const column = { hr: (s: (typeof rows)[number]) => s.hr, power: (s: (typeof rows)[number]) => s.power, speed: (s: (typeof rows)[number]) => round(s.speed, 2), altitude: (s: (typeof rows)[number]) => round(s.alt, 1), cadence: (s: (typeof rows)[number]) => s.cadence, distance: (s: (typeof rows)[number]) => round(s.dist, 0) };
       return result({

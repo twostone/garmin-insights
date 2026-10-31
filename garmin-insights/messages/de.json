@@ -98,6 +98,7 @@
   "detail_download_fit": "Original-FIT-Datei herunterladen",
   "detail_fit_pending": "Die Detaildaten dieser Aktivität werden noch geladen.",
   "detail_fit_missing": "Für diese Aktivität gibt es keine Detaildatei; angezeigt wird nur die Zusammenfassung.",
+  "detail_hr_cleaned": "Max-HF bereinigt: {clean} bpm (Rohwert {raw} bpm), {seconds} s Messfehler der Herzfrequenz entfernt.",
   "zone_n": "Zone {n}",
   "zones_hr": "Zeit in Herzfrequenzzonen",
   "zones_power": "Zeit in Leistungszonen",

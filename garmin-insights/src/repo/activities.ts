@@ -169,6 +169,11 @@ export function activitiesRepo(db: DatabaseSync) {
       void db.prepare("UPDATE activities SET fit_status = ? WHERE user_id = ? AND id = ?").run(status, userId, id),
     setLoad: (userId: string, id: number, load: { trimp: number | null; tss: number | null; tss_method: string | null }): void =>
       void db.prepare("UPDATE activities SET trimp = ?, tss = ?, tss_method = ? WHERE user_id = ? AND id = ?").run(load.trimp, load.tss, load.tss_method, userId, id),
+    setHrClean: (userId: string, id: number, c: { max_hr_clean: number | null; hr_artifact_s: number }): void =>
+      void db.prepare("UPDATE activities SET max_hr_clean = ?, hr_artifact_s = ? WHERE user_id = ? AND id = ?").run(c.max_hr_clean, c.hr_artifact_s, userId, id),
+    /** Activities with a FIT file whose heart rate has not been checked for artifacts yet. */
+    hrUncleaned: (userId: string): { id: number; date: string }[] =>
+      db.prepare("SELECT id, date FROM activities WHERE user_id = ? AND fit_status = 'done' AND hr_artifact_s IS NULL ORDER BY start_utc").all(userId) as { id: number; date: string }[],
     /** Highest heart rate ever recorded: the fallback for HR max when the athlete has none configured. */
     maxHr: (userId: string): number | null =>
       (db.prepare("SELECT MAX(COALESCE(max_hr_clean, max_hr)) AS m FROM activities WHERE user_id = ?").get(userId) as { m: number | null }).m,

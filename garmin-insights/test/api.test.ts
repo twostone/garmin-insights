@@ -117,6 +117,21 @@ test("samples are downsampled to max_points and windowed; laps; FIT download ret
   assert.equal((await a.get("/activities/1/samples?max_points=5")).status, 400);
 });
 
+test("samples: heart-rate artifacts are a gap (null) unless clean_hr=false; the detail carries the cleaning result", async () => {
+  const t = setup();
+  seed(t);
+  const samples = t.repos.activities.samples("alice", 1).map((s) => (s.t === 300 ? { ...s, hr: 201 } : s));
+  t.repos.activities.replaceDetail("alice", 1, { samples, laps: [], sets: [] });
+  t.repos.activities.setHrClean("alice", 1, { max_hr_clean: 160, hr_artifact_s: 1 });
+  const a = t.as("alice");
+  const hr = async (q: string) => (await (await a.get(`/activities/1/samples?from=299&to=301${q}`)).json()).samples.map((s: { hr: number | null }) => s.hr);
+  assert.deepEqual(await hr(""), [150, null, 150]);
+  assert.deepEqual(await hr("&clean_hr=false"), [150, 201, 150]);
+  assert.equal((await a.get("/activities/1/samples?clean_hr=maybe")).status, 400);
+  const detail = (await (await a.get("/activities/1")).json()).activity;
+  assert.deepEqual([detail.max_hr_clean, detail.hr_artifact_s], [160, 1]);
+});
+
 test("strength sets and the analysis of a run (zones from samples, decoupling, best efforts)", async () => {
   const t = setup();
   seed(t);
