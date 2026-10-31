@@ -32,9 +32,10 @@ export function customSportsRepo(db: DatabaseSync) {
       (db.prepare("SELECT id FROM custom_sports WHERE user_id = ? AND name = ? COLLATE NOCASE").get(userId, name) as { id: number } | undefined)?.id,
     typesOf: (userId: string, id: number): string[] =>
       (db.prepare("SELECT type_key FROM custom_sport_types WHERE user_id = ? AND custom_sport_id = ? ORDER BY type_key").all(userId, id) as { type_key: string }[]).map((r) => r.type_key),
-    /** Garmin types present in the user's own activities: the choices for a sport's base types. */
-    garminTypes: (userId: string): string[] =>
-      (db.prepare("SELECT DISTINCT type_key FROM activities WHERE user_id = ? ORDER BY type_key").all(userId) as { type_key: string }[]).map((r) => r.type_key),
+    /** Garmin types present in the user's own activities with their derived sport: the choices for a sport's base types
+     *  (grouped by sport in the UI) and the sports worth offering in a filter. */
+    garminTypes: (userId: string): { type_key: string; sport: string }[] =>
+      (db.prepare("SELECT DISTINCT type_key, sport FROM activities WHERE user_id = ? ORDER BY type_key").all(userId) as { type_key: string; sport: string }[]).map((r) => ({ ...r })),
 
     /** Ids are per user (no autoincrement in the composite key). Throws on a duplicate name (UNIQUE), the caller checks first. */
     create(userId: string, name: string, typeKeys: string[]): number {

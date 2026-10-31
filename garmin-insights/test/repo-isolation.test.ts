@@ -121,7 +121,7 @@ test("custom sports: per user, assignment and deletion never touch the other use
   assert.equal(r.activities.get("alice", 1)!.custom_sport_id, null, "alice's assignment is cleared");
   assert.equal(r.activities.get("bob", 1)!.custom_sport_id, b, "bob's stays");
   assert.deepEqual(r.customSports.listDetailed("bob").map((s) => [s.name, s.type_keys, s.activity_count]), [["OC1", ["running"], 1]]);
-  assert.deepEqual(r.customSports.garminTypes("bob"), ["running"]);
+  assert.deepEqual(r.customSports.garminTypes("bob"), [{ type_key: "running", sport: "running" }]);
 });
 
 test("deleteAllData keeps the custom sports (configuration) but their assignments go with the activities", () => {

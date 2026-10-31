@@ -1,29 +1,32 @@
 <script lang="ts">
   import { m } from "$lib/paraglide/messages.js";
-  import { api, unwrap } from "$lib/api.ts";
   import { sportName } from "$lib/charts.ts";
-  import { Resource } from "$lib/resource.svelte.ts";
-  import type { CustomSportList, SportFilterValue } from "$lib/types.ts";
+  import { customSports } from "$lib/custom-sports.svelte.ts";
+  import { KNOWN_SPORTS } from "$lib/format.ts";
+  import type { SportFilterValue } from "$lib/types.ts";
 
-  // Shared sport filter of a page: Garmin-derived sports plus the user's own. At most one is active; none means "all".
+  // Shared sport filter of a page: the user's own sports, then the Garmin-derived sports they actually have. At most one
+  // is active; none means "all". A native <select>: compact, and the system picker on phones.
   let { value = $bindable({}), onchange }: { value?: SportFilterValue; onchange?: () => void } = $props();
 
-  const SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "paddling", "rowing", "other"] as const;
-  const custom = new Resource(() => unwrap<CustomSportList>(api["custom-sports"].$get()));
-  $effect(() => void custom.reload());
+  const present = $derived(KNOWN_SPORTS.filter((s) => customSports.data?.garmin_types.some((t) => t.sport === s) || value.sport === s));
+  const selected = $derived(value.customSportId !== undefined ? `c:${value.customSportId}` : value.sport ? `s:${value.sport}` : "");
 
-  function pick(next: SportFilterValue) {
-    value = next;
+  function pick(option: string) {
+    const [kind, id] = [option.slice(0, 1), option.slice(2)];
+    value = kind === "c" ? { customSportId: Number(id) } : kind === "s" ? { sport: id } : {};
     onchange?.();
   }
 </script>
 
-<div class="chips" role="group" aria-label={m.filter_sport()}>
-  <button type="button" class="chip" aria-pressed={value.sport === undefined && value.customSportId === undefined} onclick={() => pick({})}>{m.filter_all()}</button>
-  {#each SPORTS as s (s)}
-    <button type="button" class="chip" aria-pressed={value.sport === s} onclick={() => pick({ sport: s })}>{sportName(s)}</button>
-  {/each}
-  {#each custom.data?.items ?? [] as c (c.id)}
-    <button type="button" class="chip" aria-pressed={value.customSportId === c.id} onclick={() => pick({ customSportId: c.id })}>{c.name}</button>
-  {/each}
-</div>
+<select class="sport-filter" aria-label={m.filter_sport()} value={selected} onchange={(e) => pick(e.currentTarget.value)}>
+  <option value="">{m.filter_all_sports()}</option>
+  {#if customSports.data?.items.length}
+    <optgroup label={m.filter_group_custom()}>
+      {#each customSports.data.items as c (c.id)}<option value={`c:${c.id}`}>{c.name}</option>{/each}
+    </optgroup>
+  {/if}
+  <optgroup label={m.filter_group_garmin()}>
+    {#each present as s (s)}<option value={`s:${s}`}>{sportName(s)}</option>{/each}
+  </optgroup>
+</select>

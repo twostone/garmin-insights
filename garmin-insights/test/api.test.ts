@@ -248,7 +248,7 @@ test("custom sports: CRUD, duplicate name 409, assignment checks, isolation", as
   assert.equal((await b.send("POST", "/custom-sports", { name: "Dragon boat" })).status, 201, "names are unique per user only");
 
   const listed = await (await a.get("/custom-sports")).json();
-  assert.deepEqual(listed.garmin_types, ["running", "strength_training"]);
+  assert.deepEqual(listed.garmin_types.map((t: { type_key: string }) => t.type_key), ["running", "strength_training"]);
   assert.equal(listed.items.length, 1);
 
   // Assignment: unknown activity / foreign sport -> 404; type mismatch -> 422; match -> 200 and visible in the list.
