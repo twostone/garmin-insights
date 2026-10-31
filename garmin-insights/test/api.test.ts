@@ -6,7 +6,8 @@ import type { Env } from "../src/types.ts";
 import type { GarminApi } from "../src/garmin/client.ts";
 import { jwt, testApi } from "./helpers.ts";
 import { runFit } from "./fit-fixtures.ts";
-import { seedTraining as seed } from "./seed.ts";
+import { openDb } from "../src/db.ts";
+import { seedPaddling, seedTraining as seed } from "./seed.ts";
 
 // A Garmin token endpoint stand-in for the key check: only the key "good" is accepted.
 const garminFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -23,8 +24,8 @@ const noGarmin = (): GarminApi => ({
   heartRateZones: async () => [],
 });
 
-function setup() {
-  const t = testApi({ garminClient: { fetch: garminFetch, minIntervalMs: 0 }, garmin: noGarmin, today: () => "2026-10-30" });
+function setup(db = openDb(":memory:")) {
+  const t = testApi({ db, garminClient: { fetch: garminFetch, minIntervalMs: 0 }, garmin: noGarmin, today: () => "2026-10-30" });
   const app = new Hono<Env>();
   // Tests pick the user per request with a header, standing in for the listeners.
   app.use("*", async (c, next) => {
@@ -287,4 +288,31 @@ test("analytics: weekly balance per calendar week, with sport filter and per use
   assert.deepEqual(strength.map((w: { load: number }) => w.load), [0, 20]);
   assert.equal((await a.get("/analytics/weekly?from=2026-10-11&to=2026-10-01")).status, 400);
   assert.equal((await (await t.as("bob").get("/analytics/weekly?from=2026-09-28&to=2026-10-11")).json())[0].load, 0);
+});
+
+test("paddling: analysis block on the activity and weekly trends per own sport", async () => {
+  const db = openDb(":memory:");
+  const t = setup(db);
+  seedPaddling(t, db);
+  const a = t.as("alice");
+  const an = await (await a.get("/activities/30/analysis")).json();
+  assert.equal(an.paddling.moving_s, 1200);
+  assert.equal(Math.round(an.paddling.avg_speed_kmh * 100) / 100, 9);
+  assert.equal(an.paddling.avg_stroke_rate, 60);
+  assert.equal(Math.round(an.paddling.efficiency * 1000) / 1000, Math.round((9 / 75) * 1000) / 1000);
+  // Summary-only activity: no stroke data, metrics from distance and moving time.
+  const plain = await (await a.get("/activities/31/analysis")).json();
+  assert.equal(plain.paddling.avg_stroke_rate, null);
+  assert.equal(Math.round(plain.paddling.avg_speed_kmh * 100) / 100, 9.88);
+  // Not a paddling activity: no block.
+  seed(t);
+  assert.equal((await (await a.get("/activities/1/analysis")).json()).paddling, undefined);
+
+  const weeks = await (await a.get("/analytics/paddling?from=2026-10-01&to=2026-10-31")).json();
+  assert.deepEqual(weeks.map((w: { week: string; group: string }) => [w.week, w.group]), [["2026-10-05", "Dragon boat"], ["2026-10-12", "paddling"]]);
+  const filtered = await (await a.get("/analytics/paddling?from=2026-10-01&to=2026-10-31&custom_sport_id=1")).json();
+  assert.equal(filtered.length, 1);
+  assert.equal((await t.as("bob").get("/analytics/paddling?from=2026-10-01&to=2026-10-31")).status, 200);
+  assert.deepEqual(await (await t.as("bob").get("/analytics/paddling?from=2026-10-01&to=2026-10-31")).json(), []);
+  assert.equal((await a.get("/analytics/paddling?from=2026-10-31&to=2026-10-01")).status, 400);
 });

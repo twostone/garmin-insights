@@ -24,6 +24,8 @@ export function pace(speedMps: number | null | undefined): string {
   return `${duration(1000 / speedMps)} /km`;
 }
 export const paceFromSecPerKm = (s: number | null | undefined) => (s ? `${duration(s)} /km` : "–");
+/** Seconds per 500 m (paddling pace) -> "3:20 /500 m". */
+export const pacePer500m = (s: number | null | undefined) => (s ? `${duration(s)} /500 m` : "–");
 export const kmh = (mps: number | null | undefined) => (mps === null || mps === undefined ? "–" : `${num(mps * 3.6, 1)} km/h`);
 
 export function dateLabel(date: string, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }): string {

@@ -304,5 +304,19 @@
   "weekly_col_strain": "Belastung",
   "weekly_col_easy": "Locker",
   "weekly_col_hard": "Hart",
-  "weekly_monotony_high": "Monotonie über 2"
+  "weekly_monotony_high": "Monotonie über 2",
+  "paddling_title": "Paddeln",
+  "paddling_distance": "Distanz pro Woche",
+  "paddling_speed": "Ø-Tempo",
+  "paddling_efficiency": "Effizienz",
+  "paddling_efficiency_hint": "Tempo (km/h) pro Herzschlag über der Ruhe-HF. Höher heißt mehr Tempo bei gleichem Aufwand.",
+  "paddling_pace500": "Pace /500 m",
+  "paddling_best_1min": "Bestes Tempo, 1 min",
+  "paddling_best_5min": "Bestes Tempo, 5 min",
+  "paddling_stroke_rate": "Schlagfrequenz",
+  "paddling_per_stroke": "Distanz pro Schlag",
+  "paddling_unit_spm": "Schl./min",
+  "paddling_unit_kmh": "km/h",
+  "paddling_unit_km": "km",
+  "paddling_unit_m": "m"
 }

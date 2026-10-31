@@ -6,6 +6,7 @@ import { bestEfforts, decoupling, meanMaxPower, POWER_DURATIONS_S, RUN_DISTANCES
 import { healthTrends } from "./health.ts";
 import { BASELINE_DAYS, readiness, type ReadinessDay } from "./readiness.ts";
 import { perSecond, type Sample } from "./load.ts";
+import { paddleMetrics, paddleMetricsFromSummary, weeklyPaddling, type PaddleMetrics } from "./paddling.ts";
 import { analysisSamples } from "./recompute.ts";
 import { strengthVolume } from "./strength.ts";
 import { volumeBy } from "./volume.ts";
@@ -78,10 +79,22 @@ export type ActivityAnalysis = {
   decoupling_pct: number | null;
   best_efforts: BestEffort[];
   mean_max_power: MeanMax[];
+  /** Only for paddling activities. */
+  paddling?: PaddleMetrics;
 };
 
 const WARMUP_S = 600;
 const WARMUP_MIN_DURATION_S = 2400;
+
+/** Resting HR valid on `date`: the athlete setting, else that day's measured resting HR. */
+function restingHr(repos: Repos, userId: string, date: string): number | null {
+  return repos.athlete.at(userId, date)?.hr_rest ?? repos.health.dailies.range(userId, date, date)[0]?.resting_hr ?? null;
+}
+
+function paddlingFor(repos: Repos, userId: string, a: ActivityRow, samples: readonly Sample[]): PaddleMetrics | null {
+  const hrRest = restingHr(repos, userId, a.date);
+  return (samples.length ? paddleMetrics(samples, { hrRest }) : null) ?? paddleMetricsFromSummary({ distance_m: a.distance_m, moving_s: a.moving_s ?? a.duration_s, avg_hr: a.avg_hr }, hrRest);
+}
 
 export function activityAnalysis(repos: Repos, userId: string, a: ActivityRow): ActivityAnalysis {
   const hasSamples = a.fit_status === "done";
@@ -89,7 +102,9 @@ export function activityAnalysis(repos: Repos, userId: string, a: ActivityRow): 
   const power = perSecond(samples, (s) => s.power);
   const usePower = a.sport === "cycling" && power.length > 0;
   const warmupS = (a.duration_s ?? 0) >= WARMUP_MIN_DURATION_S ? WARMUP_S : 0;
+  const paddling = a.sport === "paddling" ? paddlingFor(repos, userId, a, samples) : null;
   return {
+    ...(paddling ? { paddling } : {}),
     zones: { hr: zonesForActivity(repos, userId, a, "hr"), power: zonesForActivity(repos, userId, a, "power"), pace: a.sport === "running" ? zonesForActivity(repos, userId, a, "pace") : null },
     decoupling_pct: hasSamples && (a.sport === "running" || a.sport === "cycling" || a.sport === "walking" || a.sport === "hiking") ? decoupling(samples, { warmupS, usePower }) : null,
     best_efforts: hasSamples && a.sport === "running" ? bestEfforts(samples) : [],
@@ -132,6 +147,18 @@ export { RUN_DISTANCES_M };
 export function volumeInRange(repos: Repos, userId: string, o: SportFilter & { from: string; to: string; by: "week" | "month" }) {
   const activities = repos.activities.list(userId, { from: o.from, to: o.to, sport: o.sport, customSportId: o.customSportId, counted: true, limit: 100_000, order: "asc" });
   return volumeBy(activities.map((a) => ({ ...a, sport: a.group_key })), o.by);
+}
+
+/** Weekly paddling trend per group (own sport where assigned). Per-activity efficiency comes from the summary, so no samples are read. */
+export function paddlingTrends(repos: Repos, userId: string, o: SportFilter & { from: string; to: string }) {
+  const filter = { from: o.from, to: o.to, sport: o.customSportId === undefined ? ("paddling" as const) : o.sport, customSportId: o.customSportId, counted: true, limit: 100_000, order: "asc" as const };
+  const activities = repos.activities.list(userId, filter);
+  return weeklyPaddling(
+    activities.map((a) => {
+      const moving_s = a.moving_s ?? a.duration_s;
+      return { date: a.date, group_key: a.group_key, distance_m: a.distance_m, moving_s, efficiency: paddleMetricsFromSummary({ distance_m: a.distance_m, moving_s, avg_hr: a.avg_hr }, restingHr(repos, userId, a.date))?.efficiency ?? null };
+    }),
+  );
 }
 
 export function strengthInRange(repos: Repos, userId: string, o: { from: string; to: string }) {

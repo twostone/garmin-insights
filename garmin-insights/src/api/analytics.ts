@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { bestEffortsInRange, defaultRange, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
+import { bestEffortsInRange, defaultRange, paddlingTrends, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
 import type { Repos } from "../repo/index.ts";
 import type { Env } from "../types.ts";
 import { todayLocal } from "../dates.ts";
@@ -124,6 +124,23 @@ export function analyticsRoutes(deps: { repos: Repos; today?: () => string }) {
         const r = defaultRange(q.from, q.to, 365);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
         return c.json(bestEffortsInRange(repos, userOf(c).id, { ...r, sport: q.sport, customSportId: q.custom_sport_id }), 200);
+      },
+    )
+    .openapi(
+      createRoute({
+        method: "get",
+        path: "/analytics/paddling",
+        request: { query: rangeQuery.extend({ ...customSportQuery }) },
+        responses: {
+          200: json(z.array(z.object({ week: z.string(), group: z.string(), count: z.number(), distance_m: z.number(), duration_s: z.number(), avg_speed_kmh: z.number().nullable(), avg_efficiency: z.number().nullable() }))),
+          ...errors(400),
+        },
+      }),
+      (c) => {
+        const q = c.req.valid("query");
+        const r = defaultRange(q.from, q.to, DEFAULT_PMC_DAYS);
+        if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
+        return c.json(paddlingTrends(repos, userOf(c).id, { ...r, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(

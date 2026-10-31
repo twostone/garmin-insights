@@ -8,7 +8,7 @@ import { buildMcpServer, createMcpEndpoint } from "../src/mcp/server.ts";
 import type { GarminApi } from "../src/garmin/client.ts";
 import { openDb } from "../src/db.ts";
 import { jwt, mockHa, staticRoot, testApi } from "./helpers.ts";
-import { seedTraining } from "./seed.ts";
+import { seedPaddling, seedTraining } from "./seed.ts";
 
 const noGarmin = (): GarminApi => ({
   searchActivities: async () => [], downloadActivityZip: async () => null, dailySummaries: async () => [], sleepSummaries: async () => [], hrvSummaries: async () => [], heartRateZones: async () => [],
@@ -39,7 +39,7 @@ const call = async (c: Client, name: string, args: Record<string, unknown> = {})
 // Every tool the server offers, sorted.
 const TOOL_NAMES = [
   "compare_activities", "get_activity", "get_activity_samples", "get_athlete_settings", "get_best_efforts", "get_health_trends",
-  "get_readiness", "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "list_custom_sports", "trigger_sync",
+  "get_paddling_trends", "get_readiness", "get_strength_sets", "get_training_load", "get_volume", "get_zone_distribution", "list_activities", "list_custom_sports", "trigger_sync",
 ];
 
 test("tools and prompts are listed; everything but trigger_sync is read-only", async () => {
@@ -278,4 +278,28 @@ test("get_training_load weekly adds the weekly balance; a sport filter limits lo
   assert.deepEqual(own.map((w: { ctl: number }) => w.ctl), all.map((w: { ctl: number }) => w.ctl), "CTL stays the whole-athlete value");
   assert.equal((await call(c, "get_training_load", { ...args, custom_sport: "nope" })).isError, true);
   assert.equal((await call(c, "get_training_load", { from: "2026-10-01", to: "2026-10-10", custom_sport: "Dragon boat" })).isError, true, "filter needs weekly");
+});
+
+test("paddling: get_activity carries the paddling metrics, get_paddling_trends groups per own sport", async () => {
+  const db = openDb(":memory:");
+  const t = testApi({ db, garmin: noGarmin, today: () => "2026-10-30", garminClient: { fetch: (async () => new Response(jwt(86400))) as typeof fetch, minIntervalMs: 0 } });
+  seedTraining(t);
+  seedPaddling(t, db);
+  const c = await connect(t, "alice");
+  const act = (await call(c, "get_activity", { activity_id: 30 })).structuredContent!;
+  assert.equal(act.paddling.avg_speed_kmh, 9);
+  assert.equal(act.paddling.pace_min_per_500m, 3.33);
+  assert.equal(act.paddling.avg_stroke_rate_spm, 60);
+  assert.equal(act.paddling.distance_per_stroke_m, 2.5);
+  assert.equal(act.paddling.efficiency_kmh_per_bpm_above_rest, 0.12);
+  assert.equal((await call(c, "get_activity", { activity_id: 1 })).structuredContent!.paddling, undefined);
+
+  const trends = (await call(c, "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31" })).structuredContent!;
+  assert.deepEqual(trends.weeks.map((w: { group: string }) => w.group), ["Dragon boat", "paddling"]);
+  assert.equal(trends.weeks[1].distance_km, 8.4);
+  assert.equal(trends.weeks[1].avg_speed_kmh, 9.88);
+  const own = (await call(c, "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31", custom_sport: "dragon boat" })).structuredContent!;
+  assert.equal(own.weeks.length, 1);
+  assert.equal((await call(c, "get_paddling_trends", { custom_sport: "nope" })).isError, true);
+  assert.deepEqual((await call(await connect(t, "bob"), "get_paddling_trends", { from: "2026-10-01", to: "2026-10-31" })).structuredContent!.weeks, []);
 });

@@ -304,5 +304,19 @@
   "weekly_col_strain": "Strain",
   "weekly_col_easy": "Easy",
   "weekly_col_hard": "Hard",
-  "weekly_monotony_high": "Monotony above 2"
+  "weekly_monotony_high": "Monotony above 2",
+  "paddling_title": "Paddling",
+  "paddling_distance": "Distance per week",
+  "paddling_speed": "Avg speed",
+  "paddling_efficiency": "Efficiency",
+  "paddling_efficiency_hint": "Speed (km/h) per bpm above resting heart rate. Higher means more speed for the same effort.",
+  "paddling_pace500": "Pace /500 m",
+  "paddling_best_1min": "Best speed, 1 min",
+  "paddling_best_5min": "Best speed, 5 min",
+  "paddling_stroke_rate": "Stroke rate",
+  "paddling_per_stroke": "Distance per stroke",
+  "paddling_unit_spm": "spm",
+  "paddling_unit_kmh": "km/h",
+  "paddling_unit_km": "km",
+  "paddling_unit_m": "m"
 }

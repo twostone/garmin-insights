@@ -20,3 +20,9 @@ export type SetRow = { idx: number; start_s: number | null; duration_s: number |
 export type SportFilterValue = { sport?: string; customSportId?: number };
 export type CustomSportItem = { id: number; name: string; type_keys: string[]; activity_count: number };
 export type CustomSportList = { items: CustomSportItem[]; garmin_types: string[] };
+
+/** Paddling metrics of one activity (GET /activities/{id}/analysis). */
+export type Paddling = {
+  moving_s: number; avg_speed_kmh: number; pace_s_per_500m: number; max_speed_1min_kmh: number | null; max_speed_5min_kmh: number | null;
+  avg_stroke_rate: number | null; distance_per_stroke_m: number | null; avg_hr: number | null; efficiency: number | null;
+};

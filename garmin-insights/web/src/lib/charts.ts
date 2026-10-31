@@ -173,3 +173,49 @@ export function weeklyBalanceOption(rows: WeekRow[]): EChartsCoreOption {
     ],
   };
 }
+
+export type PaddlingWeek = { week: string; group: string; distance_m: number; avg_speed_kmh: number | null; avg_efficiency: number | null };
+
+const ROUND_EFFICIENCY = 1000;
+
+/** Weekly paddling: distance as bars (stacked per own sport), average speed and efficiency as lines on their own axes. */
+export function paddlingOption(rows: PaddlingWeek[]): EChartsCoreOption {
+  const weeks = [...new Set(rows.map((r) => r.week))].sort();
+  const groups = [...new Set(rows.map((r) => r.group))].sort();
+  const cell = (week: string, group: string) => rows.find((r) => r.week === week && r.group === group);
+  const grid = { lineStyle: { color: color("--border") } };
+  const lineOf = (name: string, yAxisIndex: number, line: "solid" | "dashed", pick: (r: PaddlingWeek) => number | null) =>
+    groups.map((group) => ({
+      name: `${name} · ${sportName(group)}`,
+      type: "line",
+      yAxisIndex,
+      connectNulls: true,
+      lineStyle: { color: sportCssColor(group), type: line, width: 2 },
+      itemStyle: { color: sportCssColor(group) },
+      data: weeks.map((w) => {
+        const r = cell(w, group);
+        return r ? pick(r) : null;
+      }),
+    }));
+  const round = (v: number | null, f: number) => (v === null ? null : Math.round(v * f) / f);
+  return {
+    legend: { data: [m.paddling_distance(), ...groups.map((g) => `${m.paddling_speed()} · ${sportName(g)}`), ...groups.map((g) => `${m.paddling_efficiency()} · ${sportName(g)}`)], type: "scroll" },
+    xAxis: { type: "category", data: weeks, axisLabel: { formatter: (v: string) => dateLabel(v, { day: "numeric", month: "short" }) } },
+    yAxis: [
+      { type: "value", name: m.paddling_unit_km(), splitLine: grid },
+      { type: "value", name: m.paddling_unit_kmh(), splitLine: { show: false } },
+      { type: "value", show: false, scale: true },
+    ],
+    series: [
+      ...groups.map((group) => ({
+        name: groups.length === 1 ? m.paddling_distance() : `${m.paddling_distance()} · ${sportName(group)}`,
+        type: "bar",
+        stack: "distance",
+        itemStyle: { color: sportCssColor(group), opacity: 0.45 },
+        data: weeks.map((w) => round((cell(w, group)?.distance_m ?? 0) / 1000, 10)),
+      })),
+      ...lineOf(m.paddling_speed(), 1, "solid", (r) => round(r.avg_speed_kmh, 10)),
+      ...lineOf(m.paddling_efficiency(), 2, "dashed", (r) => round(r.avg_efficiency, ROUND_EFFICIENCY)),
+    ],
+  };
+}
