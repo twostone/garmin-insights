@@ -51,12 +51,12 @@
 
 <h1>{m.nav_trends()}</h1>
 
-<div class="chips" role="group" aria-label={m.range_label()} style="margin-bottom:1rem">
-  {#each RANGES as d (d)}
-    <button type="button" class="chip" aria-pressed={days === d} onclick={() => (days = d)}>{rangeLabel(d)}</button>
-  {/each}
+<div class="filter-bar">
+  <select aria-label={m.range_label()} value={String(days)} onchange={(e) => (days = Number(e.currentTarget.value))}>
+    {#each RANGES as d (d)}<option value={String(d)}>{rangeLabel(d)}</option>{/each}
+  </select>
+  <SportFilter bind:value={sportFilter} />
 </div>
-<SportFilter bind:value={sportFilter} />
 
 <section class="card">
   <h2>{m.trends_pmc()}</h2>

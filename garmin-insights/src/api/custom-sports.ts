@@ -5,7 +5,7 @@ import type { Env } from "../types.ts";
 import { errors, idParam, json, userOf } from "./common.ts";
 
 const customSportSchema = z.object({ id: z.number(), name: z.string(), type_keys: z.array(z.string()), activity_count: z.number() });
-const listSchema = z.object({ items: z.array(customSportSchema), garmin_types: z.array(z.string()) });
+const listSchema = z.object({ items: z.array(customSportSchema), garmin_types: z.array(z.object({ type_key: z.string(), sport: z.string() })) });
 const nameSchema = z.string().trim().min(1).max(100);
 const typeKeysSchema = z.array(z.string().min(1).max(100)).max(50);
 

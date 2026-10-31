@@ -64,6 +64,7 @@
     view = "list";
     filter();
   }
+  const dateRangeLabel = $derived(from || to ? `${from ? dateLabel(from) : "…"} – ${to ? dateLabel(to) : "…"}` : m.filter_any_date());
   $effect(() => {
     void sync.finishedCount;
     void list.reload();
@@ -72,17 +73,21 @@
 
 <h1>{m.nav_activities()}</h1>
 
-<div class="card stack">
+<div class="filter-bar">
   <SportFilter bind:value={sportFilter} onchange={filter} />
+  <div class="seg" role="group" aria-label={m.view_label()}>
+    <button type="button" aria-pressed={view === "list"} onclick={() => (view = "list")}>{m.view_list()}</button>
+    <button type="button" aria-pressed={view === "calendar"} onclick={() => (view = "calendar")}>{m.view_calendar()}</button>
+  </div>
+</div>
+<!-- The date range is used less often: folded away, the summary shows what is set. -->
+<details class="card date-filter" open={!!(from || to)}>
+  <summary>{m.range_label()}: <span class="muted">{dateRangeLabel}</span></summary>
   <div class="grid cols-2">
     <div><label for="from">{m.filter_from()}</label><input id="from" type="date" bind:value={from} onchange={filter} /></div>
     <div><label for="to">{m.filter_to()}</label><input id="to" type="date" bind:value={to} onchange={filter} /></div>
   </div>
-  <div class="chips" role="group" aria-label={m.view_label()}>
-    <button type="button" class="chip" aria-pressed={view === "list"} onclick={() => (view = "list")}>{m.view_list()}</button>
-    <button type="button" class="chip" aria-pressed={view === "calendar"} onclick={() => (view = "calendar")}>{m.view_calendar()}</button>
-  </div>
-</div>
+</details>
 
 {#if view === "list"}
   <section class="card">

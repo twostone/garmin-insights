@@ -19,7 +19,7 @@ export type SetRow = { idx: number; start_s: number | null; duration_s: number |
 /** Which activities a page's analyses look at: a Garmin-derived sport, one of the user's own sports, or all (both unset). */
 export type SportFilterValue = { sport?: string; customSportId?: number };
 export type CustomSportItem = { id: number; name: string; type_keys: string[]; activity_count: number };
-export type CustomSportList = { items: CustomSportItem[]; garmin_types: string[] };
+export type CustomSportList = { items: CustomSportItem[]; garmin_types: { type_key: string; sport: string }[] };
 
 /** Paddling metrics of one activity (GET /activities/{id}/analysis). */
 export type Paddling = {

@@ -3,12 +3,14 @@
   import { getLocale, setLocale } from "$lib/paraglide/runtime.js";
   import { api, ApiError, unwrap } from "$lib/api.ts";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
+  import CustomSportDialog from "$lib/components/CustomSportDialog.svelte";
   import McpSetup from "$lib/components/McpSetup.svelte";
-  import { dateLabel, duration, num, parseDuration } from "$lib/format.ts";
+  import { customSportColor, customSports } from "$lib/custom-sports.svelte.ts";
+  import { dateLabel, duration, garminTypeName, num, parseDuration } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
   import { session } from "$lib/session.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
-  import type { CustomSportItem, CustomSportList } from "$lib/types.ts";
+  import type { CustomSportItem } from "$lib/types.ts";
 
   type Athlete = { valid_from: string; hr_max: number | null; hr_rest: number | null; lthr: number | null; ftp: number | null; threshold_pace_s_per_km: number | null; sex: "m" | "f" | null; zones: Record<string, number[]> | null; source: "garmin" | "manual" };
   type Settings = { language: "de" | "en" | null; athlete: { current: Athlete | null; history: Athlete[]; effectiveZones: Record<"hr" | "pace" | "power", number[] | null> } };
@@ -69,53 +71,10 @@
   }
 
   // --- Custom sports ---
-  const sports = new Resource(() => unwrap<CustomSportList>(api["custom-sports"].$get()));
-  $effect(() => void sports.reload());
-  let newName = $state("");
-  let newTypes = $state<string[]>([]);
-  let renaming = $state<{ id: number; name: string } | null>(null);
-  let sportMessage = $state<string | null>(null);
-  let sportToDelete = $state<CustomSportItem | null>(null);
-  let deleteSportOpen = $state(false);
-  $effect(() => {
-    if (!deleteSportOpen) sportToDelete = null;
-  });
-  const typeName = (key: string) => key.replaceAll("_", " ");
-  // Runs a write, shows the server's verdict and refreshes the list.
-  async function sportWrite(write: () => Promise<unknown>): Promise<boolean> {
-    sportMessage = null;
-    try {
-      await write();
-      await sports.reload();
-      return true;
-    } catch (err) {
-      sportMessage = err instanceof ApiError && err.code === "name_taken" ? m.cs_name_taken() : m.cs_error();
-      return false;
-    }
-  }
-  async function addSport(e: SubmitEvent) {
-    e.preventDefault();
-    if (await sportWrite(() => unwrap(api["custom-sports"].$post({ json: { name: newName, type_keys: newTypes } })))) {
-      newName = "";
-      newTypes = [];
-    }
-  }
-  async function saveRename(e: SubmitEvent) {
-    e.preventDefault();
-    if (!renaming) return;
-    const { id, name } = renaming;
-    if (await sportWrite(() => unwrap(api["custom-sports"][":id"].$patch({ param: { id: String(id) }, json: { name } })))) renaming = null;
-  }
-  const toggleType = (sport: CustomSportItem, key: string) =>
-    sportWrite(() => unwrap(api["custom-sports"][":id"].$patch({ param: { id: String(sport.id) }, json: { type_keys: sport.type_keys.includes(key) ? sport.type_keys.filter((k) => k !== key) : [...sport.type_keys, key] } })));
-  const removeSport = async () => {
-    if (sportToDelete) await sportWrite(() => api["custom-sports"][":id"].$delete({ param: { id: String(sportToDelete!.id) } }));
-  };
-  function toggleNew(key: string) {
-    newTypes = newTypes.includes(key) ? newTypes.filter((k) => k !== key) : [...newTypes, key];
-  }
-  // Offered base types: those in the user's activities, plus ones a sport already has (its activities may have been deleted).
-  const typeChoices = (extra: string[]) => [...new Set([...(sports.data?.garmin_types ?? []), ...extra])].sort();
+  let editing = $state<CustomSportItem | null>(null);
+  let sportDialogOpen = $state(false);
+  const editSport = (sport: CustomSportItem | null) => ((editing = sport), (sportDialogOpen = true));
+  const typesLabel = (keys: string[]) => (keys.length ? keys.map(garminTypeName).join(", ") : m.cs_types_any());
 
   // --- Language ---
   async function changeLanguage(value: string) {
@@ -211,46 +170,18 @@
 <section class="card stack">
   <h2>{m.cs_title()}</h2>
   <p class="muted small">{m.cs_help()}</p>
-  {#each sports.data?.items ?? [] as sport (sport.id)}
-    <div class="stack" style="border-top:1px solid var(--border);padding-top:.75rem">
-      {#if renaming?.id === sport.id}
-        <form class="row" onsubmit={saveRename}>
-          <input aria-label={m.cs_name()} type="text" maxlength="100" required bind:value={renaming.name} />
-          <button class="primary" type="submit">{m.cs_save()}</button>
-          <button type="button" onclick={() => (renaming = null)}>{m.cancel()}</button>
-        </form>
-      {:else}
-        <div class="row between"><strong>{sport.name}</strong><span class="muted small">{m.cs_count({ n: sport.activity_count })}</span></div>
-        <div class="row">
-          <button type="button" onclick={() => (renaming = { id: sport.id, name: sport.name })}>{m.cs_rename()}</button>
-          <button type="button" class="danger-btn" onclick={() => ((sportToDelete = sport), (deleteSportOpen = true))}>{m.cs_delete()}</button>
-        </div>
-      {/if}
-      <fieldset class="chips" style="border:0;padding:0;margin:0">
-        <legend class="muted small">{m.cs_types()}</legend>
-        {#each typeChoices(sport.type_keys) as key (key)}
-          <label class="chip" style="display:inline-flex;align-items:center;gap:.4rem;width:auto">
-            <input type="checkbox" style="width:auto" checked={sport.type_keys.includes(key)} onchange={() => toggleType(sport, key)} />{typeName(key)}
-          </label>
-        {/each}
-      </fieldset>
-    </div>
-  {:else}
-    {#if !sports.loading}<p class="muted">{m.cs_empty()}</p>{/if}
-  {/each}
-  <form class="stack" onsubmit={addSport} style="border-top:1px solid var(--border);padding-top:.75rem">
-    <div class="field"><label for="cs-name">{m.cs_name()}</label><input id="cs-name" type="text" maxlength="100" required bind:value={newName} /></div>
-    <fieldset class="chips" style="border:0;padding:0;margin:0">
-      <legend class="muted small">{m.cs_types()}</legend>
-      {#each typeChoices([]) as key (key)}
-        <label class="chip" style="display:inline-flex;align-items:center;gap:.4rem;width:auto">
-          <input type="checkbox" style="width:auto" checked={newTypes.includes(key)} onchange={() => toggleNew(key)} />{typeName(key)}
-        </label>
+  {#if customSports.data?.items.length}
+    <ul class="cs-list">
+      {#each customSports.data.items as sport (sport.id)}
+        <li><button type="button" class="cs-row" onclick={() => editSport(sport)}>
+          <span class="dot" style:background={customSportColor(sport.name)}></span>
+          <span class="main"><span class="name">{sport.name}</span><span class="meta">{typesLabel(sport.type_keys)}</span></span>
+          <span class="muted small">{m.cs_count({ n: sport.activity_count })}</span>
+        </button></li>
       {/each}
-    </fieldset>
-    <div class="row"><button class="primary" type="submit" disabled={!newName.trim()}>{m.cs_add()}</button></div>
-  </form>
-  {#if sportMessage}<p class="danger" role="alert">{sportMessage}</p>{/if}
+    </ul>
+  {:else if !customSports.loading}<p class="muted">{m.cs_empty()}</p>{/if}
+  <div class="row"><button type="button" class="primary" onclick={() => editSport(null)}>+ {m.cs_new()}</button></div>
 </section>
 
 <McpSetup />
@@ -276,4 +207,4 @@
 
 <ConfirmDialog bind:open={removeKeyOpen} title={m.key_remove_title()} body={m.key_remove_body()} confirmLabel={m.key_remove()} onconfirm={removeKey} />
 <ConfirmDialog bind:open={deleteOpen} title={m.data_delete_title()} body={m.data_delete_body()} confirmLabel={m.data_delete_confirm()} onconfirm={deleteAll} />
-<ConfirmDialog bind:open={deleteSportOpen} title={m.cs_delete_title()} body={m.cs_delete_body({ name: sportToDelete?.name ?? "" })} confirmLabel={m.cs_delete()} onconfirm={removeSport} />
+<CustomSportDialog bind:open={sportDialogOpen} sport={editing} />

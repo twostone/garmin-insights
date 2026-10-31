@@ -1,4 +1,6 @@
+import { m } from "$lib/paraglide/messages.js";
 import { getLocale } from "$lib/paraglide/runtime.js";
+import { customSportColor } from "./custom-sports.svelte.ts";
 
 // Metric units everywhere. Numbers and dates follow the UI language.
 const nf = (opts: Intl.NumberFormatOptions) => new Intl.NumberFormat(getLocale(), opts);
@@ -51,13 +53,23 @@ export function parseDuration(text: string): number | null {
 export const KNOWN_SPORTS = ["running", "cycling", "swimming", "strength", "walking", "hiking", "paddling", "rowing", "other"];
 export const sportColor = (sport: string) => `var(--c-${KNOWN_SPORTS.includes(sport) ? sport : "other"})`;
 
-// Own sports have no CSS variable; a small palette (readable on light and dark) keeps them apart in stacked charts and lists.
-const CUSTOM_PALETTE = ["#e64980", "#2f9e44", "#f08c00", "#4263eb", "#ae3ec9", "#099268", "#c2255c", "#5f3dc4"];
-/** Stable colour per name: the same sport keeps its colour across pages. */
-export function customSportColor(name: string): string {
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
-  return CUSTOM_PALETTE[h % CUSTOM_PALETTE.length]!;
+/** Readable name of a Garmin activity type ("stand_up_paddleboarding_v2" -> "Stand-up paddling"); unknown types keep their key. */
+export function garminTypeName(key: string): string {
+  const base = key.replace(/_v\d+$/, "");
+  const known = GARMIN_TYPE_NAMES[base];
+  if (known) return known();
+  const text = base.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
+const GARMIN_TYPE_NAMES: Record<string, () => string> = {
+  running: m.gt_running, treadmill_running: m.gt_treadmill_running, trail_running: m.gt_trail_running,
+  cycling: m.gt_cycling, road_biking: m.gt_road_biking, mountain_biking: m.gt_mountain_biking, indoor_cycling: m.gt_indoor_cycling,
+  lap_swimming: m.gt_lap_swimming, open_water_swimming: m.gt_open_water_swimming,
+  strength_training: m.gt_strength_training, hiit: m.gt_hiit, indoor_cardio: m.gt_indoor_cardio, multi_sport: m.gt_multi_sport,
+  walking: m.gt_walking, hiking: m.gt_hiking,
+  stand_up_paddleboarding: m.gt_stand_up_paddleboarding, kayaking: m.gt_kayaking, canoeing: m.gt_canoeing,
+  rowing: m.gt_rowing, indoor_rowing: m.gt_indoor_rowing, padel: m.gt_padel, yoga: m.gt_yoga, other: m.gt_other,
+};
+
 /** CSS colour of a Garmin-derived sport, or of an own sport when `custom` is set. */
 export const anySportColor = (sport: string, custom?: string | null) => (custom ? customSportColor(custom) : sportColor(sport));

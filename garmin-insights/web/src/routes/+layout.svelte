@@ -6,6 +6,7 @@
   import { m } from "$lib/paraglide/messages.js";
   import { session } from "$lib/session.svelte.ts";
   import { sync } from "$lib/sync.svelte.ts";
+  import { customSports } from "$lib/custom-sports.svelte.ts";
   import { registerServiceWorker } from "$lib/pwa.ts";
   import { phaseName } from "$lib/charts.ts";
 
@@ -27,6 +28,11 @@
 
   $effect(() => {
     if (session.status === "authenticated") void sync.start();
+  });
+  // Own sports are needed on every page (names, colours, filter); a sync can bring new Garmin types to offer.
+  $effect(() => {
+    void sync.finishedCount;
+    if (session.status === "authenticated") void customSports.reload();
   });
 
   const key = $derived(sync.progress?.key);

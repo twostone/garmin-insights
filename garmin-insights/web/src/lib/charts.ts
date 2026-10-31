@@ -1,6 +1,7 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { m } from "$lib/paraglide/messages.js";
-import { customSportColor, dateLabel, duration, KNOWN_SPORTS, num } from "./format.ts";
+import { customSportColor } from "./custom-sports.svelte.ts";
+import { dateLabel, duration, KNOWN_SPORTS, num } from "./format.ts";
 
 // ECharts options for the pages. Colours come from the page's CSS variables (canvas cannot resolve var()).
 const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
