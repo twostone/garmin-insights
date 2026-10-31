@@ -71,6 +71,10 @@ export type ActivityRow = Omit<ActivityInput, "summary_json"> & {
   hr_artifact_s: number | null;
 };
 
+export type LegRow = {
+  id: number; sport: Sport; type_key: string; start_utc: string; duration_s: number | null; fit_status: FitStatus; tss: number | null; avg_hr: number | null;
+};
+
 /** Which activities an analysis looks at: a Garmin-derived sport, the user's own sport, or both. */
 export type SportFilter = { sport?: Sport; customSportId?: number };
 
@@ -167,6 +171,18 @@ export function activitiesRepo(db: DatabaseSync) {
       (db.prepare("SELECT COUNT(*) AS n FROM activities WHERE user_id = ? AND fit_status = 'pending'").get(userId) as { n: number }).n,
     setFitStatus: (userId: string, id: number, status: FitStatus): void =>
       void db.prepare("UPDATE activities SET fit_status = ? WHERE user_id = ? AND id = ?").run(status, userId, id),
+    /** The multisport link from the summary; kept apart from upsertSummary, which never touches derived columns. */
+    setMultisport: (userId: string, id: number, link: { parent_id: number | null; is_multisport_parent: 0 | 1 }): void =>
+      void db.prepare("UPDATE activities SET parent_id = ?, is_multisport_parent = ? WHERE user_id = ? AND id = ?").run(link.parent_id, link.is_multisport_parent, userId, id),
+    /** The legs of a multisport activity in order. `avg_hr` falls back to the mean of the leg's samples. */
+    legs: (userId: string, parentId: number): LegRow[] =>
+      db
+        .prepare(
+          `SELECT a.id, a.sport, a.type_key, a.start_utc, a.duration_s, a.fit_status, a.tss,
+                  COALESCE(a.avg_hr, (SELECT AVG(s.hr) FROM activity_samples s WHERE s.user_id = a.user_id AND s.activity_id = a.id AND s.hr > 0)) AS avg_hr
+           FROM activities a WHERE a.user_id = ? AND a.parent_id = ? ORDER BY a.start_utc, a.id`,
+        )
+        .all(userId, parentId) as LegRow[],
     setLoad: (userId: string, id: number, load: { trimp: number | null; tss: number | null; tss_method: string | null }): void =>
       void db.prepare("UPDATE activities SET trimp = ?, tss = ?, tss_method = ? WHERE user_id = ? AND id = ?").run(load.trimp, load.tss, load.tss_method, userId, id),
     setHrClean: (userId: string, id: number, c: { max_hr_clean: number | null; hr_artifact_s: number }): void =>

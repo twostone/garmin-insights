@@ -7,7 +7,11 @@ export type ActivityFull = ActivityLite & {
   te_aerobic: number | null; te_anaerobic: number | null; start_lat: number | null; start_lon: number | null; total_sets: number | null; total_reps: number | null;
   fit_status: "pending" | "done" | "none" | "failed"; trimp: number | null; tss_method: string | null;
   max_hr_clean: number | null; hr_artifact_s: number | null;
+  /** Multisport: the parent of a leg, null otherwise. */
+  parent_id: number | null;
 };
+/** One leg of a multisport activity; `start_offset_s` counts from the parent's start. */
+export type Leg = { id: number; sport: string; garmin_type: string; start_offset_s: number; duration_s: number | null; avg_hr: number | null; tss: number | null };
 export type Sample = { t: number; lat: number | null; lon: number | null; alt: number | null; hr: number | null; power: number | null; cadence: number | null; speed: number | null; dist: number | null; temp: number | null };
 export type Lap = { idx: number; start_s: number | null; duration_s: number | null; distance_m: number | null; avg_hr: number | null; max_hr: number | null; avg_power: number | null; avg_speed: number | null; avg_cadence: number | null; ascent_m: number | null };
 export type Zone = { kind: "hr" | "power" | "pace"; floors: number[]; below: number; seconds: number[]; source: "samples" | "garmin_summary" } | null;

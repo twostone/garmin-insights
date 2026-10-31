@@ -9,7 +9,12 @@ export type ParsedFit = {
   laps: LapRow[];
   sets: StrengthSetRow[];
   session: { sport: string | null; subSport: string | null; normalizedPower: number | null; thresholdPower: number | null; vo2max: number | null };
+  /** Every session in the file: one for a plain activity, one per leg (and transition) for a multisport activity. */
+  sessions: FitSession[];
 };
+
+/** A session of the file; `start_s` is relative to the first session's start, like the sample times. */
+export type FitSession = { start_s: number; duration_s: number | null; sport: string | null; subSport: string | null; avg_hr: number | null; max_hr: number | null };
 
 export class FitError extends Error {}
 
@@ -26,6 +31,7 @@ const degrees = (v: unknown): number | null => {
   return n === null ? null : Math.round(n * SEMICIRCLE_TO_DEGREES * 1e6) / 1e6;
 };
 const seconds = (v: unknown, origin: number): number | null => (v instanceof Date ? (v.getTime() - origin) / 1000 : null);
+const text = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v);
 
 // "benchPress" -> "bench_press": a stable key the UI and the muscle-group mapping can use.
@@ -92,6 +98,16 @@ export function parseFit(bytes: Uint8Array): ParsedFit {
     samples: [...byTime.values()].sort((a, b) => a.t - b.t),
     laps,
     sets,
+    sessions: sessions
+      .map((x) => ({
+        start_s: seconds(x.startTime, origin) ?? 0,
+        duration_s: num(x.totalElapsedTime) ?? num(x.totalTimerTime),
+        sport: text(x.sport),
+        subSport: text(x.subSport),
+        avg_hr: num(x.avgHeartRate),
+        max_hr: num(x.maxHeartRate),
+      }))
+      .sort((x, y) => x.start_s - y.start_s),
     session: {
       sport: typeof session.sport === "string" ? session.sport : null,
       subSport: typeof session.subSport === "string" ? session.subSport : null,
@@ -99,5 +115,28 @@ export function parseFit(bytes: Uint8Array): ParsedFit {
       thresholdPower: num(session.thresholdPower),
       vo2max: null,
     },
+  };
+}
+
+// Multisport: Garmin may hand out no file for a leg, but the parent's file holds every leg as its own session. A leg is matched
+// to the session that starts closest to its own start (Garmin's summary times and the file's times can differ by a few seconds).
+const LEG_MATCH_TOLERANCE_S = 120;
+
+/** The session that starts `offsetS` seconds after the first one, or null when none is close enough. */
+export function sessionAt(sessions: FitSession[], offsetS: number): FitSession | null {
+  let best: FitSession | null = null;
+  for (const x of sessions) if (!best || Math.abs(x.start_s - offsetS) < Math.abs(best.start_s - offsetS)) best = x;
+  return best && Math.abs(best.start_s - offsetS) <= LEG_MATCH_TOLERANCE_S ? best : null;
+}
+
+/** The part of a parsed file that falls into one session, with times relative to that session's start. */
+export function sliceSession(fit: ParsedFit, session: FitSession): { samples: SampleRow[]; laps: LapRow[]; sets: StrengthSetRow[] } {
+  const from = session.start_s;
+  const to = session.duration_s === null ? Infinity : from + session.duration_s;
+  const inside = (t: number | null) => t !== null && t >= from && t < to;
+  return {
+    samples: fit.samples.filter((x) => inside(x.t)).map((x) => ({ ...x, t: x.t - from })),
+    laps: fit.laps.filter((l) => inside(l.start_s)).map((l, idx) => ({ ...l, idx, start_s: l.start_s! - from })),
+    sets: fit.sets.filter((x) => inside(x.start_s)).map((x, idx) => ({ ...x, idx, start_s: x.start_s! - from })),
   };
 }

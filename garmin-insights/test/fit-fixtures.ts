@@ -83,3 +83,25 @@ export function strengthFit(): Uint8Array {
   put(enc, M.SESSION, { timestamp: at(600), startTime: START, totalElapsedTime: 600, totalTimerTime: 600, sport: "training", subSport: "strengthTraining" });
   return enc.close();
 }
+
+/** A multisport file (e.g. CrossFit): 300 s rowing at 130 bpm, then 300 s HIIT at 160 bpm, one session and one lap per leg. */
+export function multisportFit(): Uint8Array {
+  const enc = new Encoder();
+  header(enc, "multisport");
+  const at = (s: number) => new Date(START.getTime() + s * 1000);
+  const legs = [
+    { from: 0, to: 300, sport: "rowing", subSport: "indoorRowing", hr: 130 },
+    { from: 300, to: 600, sport: "training", subSport: "hiit", hr: 160 },
+  ];
+  for (const l of legs) {
+    for (let i = l.from; i < l.to; i++) put(enc, M.RECORD, { timestamp: at(i), heartRate: l.hr });
+    put(enc, M.LAP, { timestamp: at(l.to), startTime: at(l.from), totalElapsedTime: l.to - l.from, totalTimerTime: l.to - l.from, avgHeartRate: l.hr });
+  }
+  for (const l of legs) {
+    put(enc, M.SESSION, {
+      timestamp: at(l.to), startTime: at(l.from), totalElapsedTime: l.to - l.from, totalTimerTime: l.to - l.from,
+      sport: l.sport, subSport: l.subSport, avgHeartRate: l.hr, maxHeartRate: l.hr + 5,
+    });
+  }
+  return enc.close();
+}

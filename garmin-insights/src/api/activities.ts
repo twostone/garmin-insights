@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { downsample } from "../analytics/downsample.ts";
+import { legOverview, parentAvgHr } from "../analytics/multisport.ts";
 import { activityAnalysis, parseSummary } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
@@ -34,6 +35,10 @@ const setSchema = z.object({
 });
 const zoneSchema = z.object({ kind: z.enum(["hr", "power", "pace"]), floors: z.array(z.number()), below: z.number(), seconds: z.array(z.number()), source: z.enum(["samples", "garmin_summary"]) }).nullable();
 const exerciseSchema = z.object({ exercise: z.string(), muscle_group: z.string(), sets: z.number(), reps: z.number(), volume_kg: z.number(), max_weight_kg: z.number().nullable(), best_e1rm_kg: z.number().nullable() });
+
+const legSchema = z.object({
+  id: z.number(), sport: z.string(), garmin_type: z.string(), start_offset_s: z.number(), duration_s: z.number().nullable(), avg_hr: z.number().nullable(), tss: z.number().nullable(),
+});
 
 const MAX_SAMPLES = 5000;
 const DEFAULT_SAMPLES = 1500;
@@ -78,13 +83,19 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
         method: "get",
         path: "/activities/{id}",
         request: { params: idParam },
-        responses: { 200: json(z.object({ activity: activitySchema, summary: z.record(z.string(), z.unknown()) })), ...errors(404) },
+        responses: { 200: json(z.object({ activity: activitySchema, summary: z.record(z.string(), z.unknown()), legs: z.array(legSchema) })), ...errors(404) },
       }),
       (c) => {
         const user = userOf(c).id;
         const activity = repos.activities.get(user, c.req.valid("param").id);
         if (!activity) return c.json({ error: "not_found" }, 404);
-        return c.json({ activity, summary: parseSummary(repos.activities.summaryJson(user, activity.id)) }, 200);
+        // Multisport: the legs, and the parent's average HR from them when Garmin sent none.
+        const legs = repos.activities.legs(user, activity.id);
+        return c.json({
+          activity: { ...activity, avg_hr: parentAvgHr(activity, legs) },
+          summary: parseSummary(repos.activities.summaryJson(user, activity.id)),
+          legs: legOverview(activity, legs),
+        }, 200);
       },
     )
     .openapi(

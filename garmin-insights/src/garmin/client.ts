@@ -163,8 +163,9 @@ export function createGarminClient(keys: GarminKeySource, o: ClientOptions = {})
 
     return {
       async searchActivities({ startDate, endDate, start, limit }) {
+        // Children too: the legs of a multisport activity carry the per-sport HR, laps and samples the parent lacks.
         const { data } = await api.GET("/activitylist-service/activities/search/activities", {
-          params: { query: { startDate, endDate, start, limit, sortOrder: "desc", excludeChildren: true } },
+          params: { query: { startDate, endDate, start, limit, sortOrder: "desc", excludeChildren: false } },
         });
         return data ?? [];
       },
