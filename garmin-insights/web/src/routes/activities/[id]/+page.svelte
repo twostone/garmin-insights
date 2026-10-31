@@ -2,13 +2,13 @@
   import { page } from "$app/state";
   import { href } from "$lib/nav";
   import { m } from "$lib/paraglide/messages.js";
-  import { api, unwrap } from "$lib/api.ts";
+  import { api, ApiError, unwrap } from "$lib/api.ts";
   import { seriesOption, sportName, zoneOption } from "$lib/charts.ts";
   import Chart from "$lib/components/Chart.svelte";
   import MapView from "$lib/components/MapView.svelte";
-  import { dateLabel, duration, kmh, km, meters, num, pace, sportColor, timeLabel } from "$lib/format.ts";
+  import { dateLabel, duration, kmh, km, meters, num, pace, anySportColor, timeLabel } from "$lib/format.ts";
   import { Resource } from "$lib/resource.svelte.ts";
-  import type { ActivityFull, Lap, SetRow, Zone } from "$lib/types.ts";
+  import type { ActivityFull, CustomSportList, Lap, SetRow, Zone } from "$lib/types.ts";
 
   const id = $derived(page.params.id ?? "");
   const detail = new Resource(() => unwrap<{ activity: ActivityFull; summary: Record<string, unknown> }>(api.activities[":id"].$get({ param: { id } })));
@@ -17,10 +17,13 @@
   const strength = new Resource(() => unwrap<{ sets: SetRow[]; byExercise: { exercise: string; sets: number; reps: number; volume_kg: number; max_weight_kg: number | null; best_e1rm_kg: number | null }[]; totalVolumeKg: number }>(api.activities[":id"].strength.$get({ param: { id } })));
   const analysis = new Resource(() => unwrap<{ zones: { hr: Zone; power: Zone; pace: Zone }; decoupling_pct: number | null; best_efforts: { distance: number; seconds: number; startT: number }[]; mean_max_power: { seconds: number; watts: number }[] }>(api.activities[":id"].analysis.$get({ param: { id } })));
 
+  const customSports = new Resource(() => unwrap<CustomSportList>(api["custom-sports"].$get()));
+  let assignError = $state<string | null>(null);
+
   // The route param changes when navigating between activities: reload everything.
   $effect(() => {
     void id;
-    for (const r of [detail, samples, laps, strength, analysis]) void r.reload();
+    for (const r of [detail, samples, laps, strength, analysis, customSports]) void r.reload();
   });
 
   const a = $derived(detail.data?.activity);
@@ -30,6 +33,19 @@
   const methodName = (method: string) => (method === "power" ? m.tss_power() : method === "run_pace" ? m.tss_run_pace() : method === "hr_estimated" ? m.tss_hr_estimated() : m.tss_hr());
   const exerciseName = (e: string | null) => (e ? e.replaceAll("_", " ") : "–");
   const effortName = (d: number) => (d === 1609 ? m.effort_mile() : d >= 1000 ? `${num(d / 1000, d % 1000 ? 3 : 0).replace(/[.,]?0+$/, "")} km` : `${d} m`);
+
+  // Offered: sports without base types or with this activity's Garmin type, plus the one already assigned.
+  const fitting = $derived((customSports.data?.items ?? []).filter((c) => !c.type_keys.length || (a && c.type_keys.includes(a.type_key)) || c.id === a?.custom_sport_id));
+  const garminType = (key: string) => key.replaceAll("_", " ");
+  async function assign(value: string) {
+    assignError = null;
+    try {
+      await unwrap(api.activities[":id"].$patch({ param: { id }, json: { custom_sport_id: value === "" ? null : Number(value) } }));
+    } catch (err) {
+      assignError = err instanceof ApiError && err.code === "type_mismatch" ? m.cs_type_mismatch() : m.cs_error();
+    }
+    await Promise.all([detail.reload(), customSports.reload()]);
+  }
 
   async function downloadFit() {
     const res = await api.activities[":id"].fit.$get({ param: { id } });
@@ -48,8 +64,19 @@
 {#if detail.error}
   <p class="danger" role="alert">{m.error_not_found()}</p>
 {:else if a}
-  <h1><span class="dot" style:background={sportColor(a.sport)} style="display:inline-block;width:.7rem;height:1.2rem;border-radius:4px;margin-right:.5rem"></span>{a.name || sportName(a.sport)}</h1>
-  <p class="muted">{sportName(a.sport)} · {dateLabel(a.date, { dateStyle: "full" } as Intl.DateTimeFormatOptions)} · {timeLabel(a.start_utc)}</p>
+  <h1><span class="dot" style:background={anySportColor(a.sport, a.custom_sport)} style="display:inline-block;width:.7rem;height:1.2rem;border-radius:4px;margin-right:.5rem"></span>{a.name || a.custom_sport || sportName(a.sport)}</h1>
+  <p class="muted">{a.custom_sport ?? sportName(a.sport)}{#if a.sport === "paddling" && !a.custom_sport} · <em>{m.cs_unassigned()}</em>{/if} · {dateLabel(a.date, { dateStyle: "full" } as Intl.DateTimeFormatOptions)} · {timeLabel(a.start_utc)}</p>
+
+  {#if customSports.data && (customSports.data.items.length || a.custom_sport_id !== null)}
+    <div class="field">
+      <label for="custom-sport">{m.cs_field()}</label>
+      <select id="custom-sport" value={a.custom_sport_id === null ? "" : String(a.custom_sport_id)} onchange={(e) => assign(e.currentTarget.value)}>
+        <option value="">{m.cs_garmin_option({ type: garminType(a.type_key) })}</option>
+        {#each fitting as c (c.id)}<option value={String(c.id)}>{c.name}</option>{/each}
+      </select>
+      {#if assignError}<p class="danger small" role="alert">{assignError}</p>{/if}
+    </div>
+  {/if}
 
   <section class="card">
     <div class="grid cols-4 stat">
