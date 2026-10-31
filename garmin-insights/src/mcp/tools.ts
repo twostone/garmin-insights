@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { downsample } from "../analytics/downsample.ts";
 import { legOverview, parentAvgHr } from "../analytics/multisport.ts";
-import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import { isDate, todayLocal, weekStart } from "../dates.ts";
@@ -278,12 +278,17 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     {
       title: "Get training load (fitness, fatigue, form)",
       description:
-        "Performance management chart. Per day: training stress (TSS-like load of all sports), CTL = fitness (42-day exponential average), ATL = fatigue (7-day), TSB = form (yesterday's CTL minus ATL; above +5 fresh, -10 to -30 productive, below -30 overreaching risk). granularity 'weekly' returns one row per week (week-ending values, summed load). Default range: last 90 days.",
-      inputSchema: z.object({ ...range, granularity: z.enum(["daily", "weekly"]).default("daily") }),
+        "Performance management chart. Per day: training stress (TSS-like load of all sports), CTL = fitness (42-day exponential average), ATL = fatigue (7-day), TSB = form (yesterday's CTL minus ATL; above +5 fresh, -10 to -30 productive, below -30 overreaching risk). granularity 'weekly' returns one row per week (week-ending CTL/ATL/TSB, summed load) and adds the weekly balance: acwr (acute:chronic workload ratio, mean daily load of the last 7 days over the last 28; 0.8-1.3 is the sweet spot), monotony (Foster: mean daily load over its standard deviation, rest days count as 0; above 2 is a warning, null without variation), strain (load x monotony), intensity_split_pct (easy = heart-rate zones 1-2, moderate = zone 3, hard = zones 4-5, share of zoned time) and sport_mix (duration and load per sport). The last week only counts the days up to 'to'. Optional 'custom_sport' or 'sport' (weekly only) limits training_stress, monotony, acwr, strain, the split and the mix to that sport; ctl, atl and tsb stay whole-athlete values. Default range: last 90 days.",
+      inputSchema: z.object({ ...range, granularity: z.enum(["daily", "weekly"]).default("daily"), sport: sport.optional(), custom_sport: customSport }),
       outputSchema: z.object({
         range: z.object({ from: z.string(), to: z.string() }),
         latest: z.object({ date: z.string(), ctl: z.number(), atl: z.number(), tsb: z.number(), form: z.string() }).nullable(),
-        series: z.array(z.object({ date: z.string(), training_stress: z.number(), trimp: z.number(), ctl: z.number(), atl: z.number(), tsb: z.number() })),
+        series: z.array(z.object({
+          date: z.string(), training_stress: z.number(), trimp: z.number(), ctl: z.number(), atl: z.number(), tsb: z.number(),
+          week_start: z.string().optional(), acwr: z.number().nullable().optional(), monotony: z.number().nullable().optional(), strain: z.number().nullable().optional(),
+          intensity_split_pct: z.object({ easy: z.number(), moderate: z.number(), hard: z.number() }).nullable().optional(),
+          sport_mix: z.array(z.object({ sport: z.string(), duration_min: z.number(), training_stress: z.number() })).optional(),
+        })),
       }),
       annotations: readOnly,
     },
@@ -291,17 +296,29 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
       const r = resolveRange(q, 90);
       const err = rangeError(r);
       if (err) return failure(err);
+      const cs = resolveCustomSport(q.custom_sport);
+      if (cs.error) return failure(cs.error);
+      const filtered = q.sport !== undefined || cs.customSportId !== undefined;
+      if (filtered && q.granularity === "daily") return failure("Sport filters are only supported with granularity 'weekly'.");
       if (q.granularity === "daily" && rangeDays(r) > MAX_DAILY_DAYS) return failure(`Daily rows are limited to ${MAX_DAILY_DAYS} days; use granularity 'weekly' for longer ranges.`);
       const rows = repos.analytics.range(uid, r.from, r.to);
-      let series = rows.map((d) => ({ date: d.date, training_stress: round(d.tss, 0)!, trimp: round(d.trimp, 0)!, ctl: round(d.ctl)!, atl: round(d.atl)!, tsb: round(d.tsb)! }));
+      const daily = rows.map((d) => ({ date: d.date, training_stress: round(d.tss, 0)!, trimp: round(d.trimp, 0)!, ctl: round(d.ctl)!, atl: round(d.atl)!, tsb: round(d.tsb)! }));
+      let series: Record<string, unknown>[] = daily;
       if (q.granularity === "weekly") {
-        const weeks = new Map<string, (typeof series)[number]>();
-        for (const d of series) {
+        const weeks = new Map<string, (typeof daily)[number]>();
+        for (const d of daily) {
           const key = weekStart(d.date);
           const w = weeks.get(key);
           weeks.set(key, { ...d, training_stress: round((w?.training_stress ?? 0) + d.training_stress, 0)!, trimp: round((w?.trimp ?? 0) + d.trimp, 0)! });
         }
-        series = [...weeks.values()];
+        const balance = new Map(weeklyBalance(repos, uid, { ...r, sport: q.sport, customSportId: cs.customSportId }).map((w) => [w.week, w]));
+        series = [...weeks.values()].map((w) => {
+          const b = balance.get(weekStart(w.date))!;
+          return {
+            ...w, ...(filtered ? { training_stress: round(b.load, 0)! } : {}), week_start: b.week, acwr: b.acwr, monotony: b.monotony, strain: b.strain, intensity_split_pct: b.intensity_pct,
+            sport_mix: b.sport_mix.map((x) => ({ sport: x.sport, duration_min: round(x.duration_s / 60, 0)!, training_stress: round(x.tss, 0)! })),
+          };
+        });
       }
       const last = rows.at(-1);
       return result({ range: r, latest: last ? { date: last.date, ctl: round(last.ctl)!, atl: round(last.atl)!, tsb: round(last.tsb)!, form: interpretForm(last.tsb) } : null, series });

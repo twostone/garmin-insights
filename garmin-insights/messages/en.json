@@ -291,5 +291,18 @@
   "heatmap_day": "{date}: {tss} TSS, {count} activities",
   "heatmap_rest": "{date}: no activity",
   "heatmap_legend_less": "Less",
-  "heatmap_legend_more": "More"
+  "heatmap_legend_more": "More",
+  "weekly_title": "Weekly balance",
+  "weekly_hint": "Bars: training time per sport. Line: ACWR = mean daily load of the last 7 days over the last 28 days; 0.8–1.3 is considered the sweet spot. Monotony = mean daily load over its spread (rest days count as 0), above 2 is a warning. Strain = weekly load × monotony.",
+  "weekly_chart_label": "Training time per sport and ACWR per week",
+  "weekly_acwr": "ACWR",
+  "weekly_sweet_spot": "Range 0.8–1.3",
+  "weekly_caption": "The most recent weeks at a glance",
+  "weekly_col_week": "Week of",
+  "weekly_col_load": "Load",
+  "weekly_col_monotony": "Monotony",
+  "weekly_col_strain": "Strain",
+  "weekly_col_easy": "Easy",
+  "weekly_col_hard": "Hard",
+  "weekly_monotony_high": "Monotony above 2"
 }

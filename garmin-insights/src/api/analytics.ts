@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { bestEffortsInRange, defaultRange, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, zoneDistribution } from "../analytics/queries.ts";
+import { bestEffortsInRange, defaultRange, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
 import type { Repos } from "../repo/index.ts";
 import type { Env } from "../types.ts";
 import { todayLocal } from "../dates.ts";
@@ -61,6 +61,27 @@ export function analyticsRoutes(deps: { repos: Repos; today?: () => string }) {
         const r = defaultRange(q.from, q.to, DEFAULT_PMC_DAYS);
         if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
         return c.json(volumeInRange(repos, userOf(c).id, { ...r, by: q.by, sport: q.sport as never, customSportId: q.custom_sport_id }), 200);
+      },
+    )
+    .openapi(
+      createRoute({
+        method: "get",
+        path: "/analytics/weekly",
+        request: { query: rangeQuery.extend({ sport: sportSchema.optional(), ...customSportQuery }) },
+        responses: {
+          200: json(z.array(z.object({
+            week: z.string(), load: z.number(), acwr: z.number().nullable(), monotony: z.number().nullable(), strain: z.number().nullable(),
+            intensity_pct: z.object({ easy: z.number(), moderate: z.number(), hard: z.number() }).nullable(),
+            sport_mix: z.array(z.object({ sport: z.string(), duration_s: z.number(), tss: z.number() })),
+          }))),
+          ...errors(400),
+        },
+      }),
+      (c) => {
+        const q = c.req.valid("query");
+        const r = defaultRange(q.from, q.to, DEFAULT_RANGE_DAYS);
+        if (tooLong(r)) return c.json({ error: "bad_range" }, 400);
+        return c.json(weeklyBalance(repos, userOf(c).id, { ...r, sport: q.sport as never, customSportId: q.custom_sport_id }), 200);
       },
     )
     .openapi(

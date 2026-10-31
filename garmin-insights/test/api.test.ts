@@ -272,3 +272,19 @@ test("custom sports: CRUD, duplicate name 409, assignment checks, isolation", as
   assert.equal((await a.send("DELETE", `/custom-sports/${sport.id}`)).status, 404);
   assert.equal((await (await a.get("/activities/1")).json()).activity.custom_sport_id, null);
 });
+
+test("analytics: weekly balance per calendar week, with sport filter and per user", async () => {
+  const t = setup();
+  seed(t);
+  for (const [id, tss] of [[1, 50], [2, 20], [3, 30]] as const) t.repos.activities.setLoad("alice", id, { trimp: null, tss, tss_method: "test" });
+  const a = t.as("alice");
+  const weeks = await (await a.get("/analytics/weekly?from=2026-09-28&to=2026-10-11")).json();
+  assert.deepEqual(weeks.map((w: { week: string; load: number }) => [w.week, w.load]), [["2026-09-28", 50], ["2026-10-05", 50]]);
+  assert.deepEqual(weeks[1].sport_mix.map((s: { sport: string }) => s.sport).sort(), ["running", "strength"]);
+  for (const w of weeks) assert.equal(w.intensity_pct.easy + w.intensity_pct.moderate + w.intensity_pct.hard > 99.9, true, "FIT files give heart-rate zones; shares add up to 100");
+  assert.equal((await (await t.as("bob").get("/analytics/weekly?from=2026-09-28&to=2026-10-11")).json())[1].intensity_pct, null);
+  const strength = await (await a.get("/analytics/weekly?from=2026-09-28&to=2026-10-11&sport=strength")).json();
+  assert.deepEqual(strength.map((w: { load: number }) => w.load), [0, 20]);
+  assert.equal((await a.get("/analytics/weekly?from=2026-10-11&to=2026-10-01")).status, 400);
+  assert.equal((await (await t.as("bob").get("/analytics/weekly?from=2026-09-28&to=2026-10-11")).json())[0].load, 0);
+});

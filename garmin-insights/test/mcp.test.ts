@@ -6,6 +6,7 @@ import { createHaTokenVerifier } from "../src/auth/ha-token.ts";
 import { createExternalApp } from "../src/listeners/external.ts";
 import { buildMcpServer, createMcpEndpoint } from "../src/mcp/server.ts";
 import type { GarminApi } from "../src/garmin/client.ts";
+import { openDb } from "../src/db.ts";
 import { jwt, mockHa, staticRoot, testApi } from "./helpers.ts";
 import { seedTraining } from "./seed.ts";
 
@@ -13,8 +14,8 @@ const noGarmin = (): GarminApi => ({
   searchActivities: async () => [], downloadActivityZip: async () => null, dailySummaries: async () => [], sleepSummaries: async () => [], hrvSummaries: async () => [], heartRateZones: async () => [],
 });
 
-function services() {
-  const t = testApi({ garmin: noGarmin, today: () => "2026-10-30", garminClient: { fetch: (async () => new Response(jwt(86400))) as typeof fetch, minIntervalMs: 0 } });
+function services(db = openDb(":memory:")) {
+  const t = testApi({ db, garmin: noGarmin, today: () => "2026-10-30", garminClient: { fetch: (async () => new Response(jwt(86400))) as typeof fetch, minIntervalMs: 0 } });
   seedTraining(t);
   // Health data and a load history for alice.
   const dates = Array.from({ length: 40 }, (_, i) => new Date(Date.UTC(2026, 8, 20 + i)).toISOString().slice(0, 10));
@@ -253,4 +254,28 @@ test("list_custom_sports: name, base types and activity count; filters by name; 
   assert.deepEqual(r.structuredContent!.custom_sports, [{ name: "Dragon boat", garmin_types: ["stand_up_paddleboarding"], activities: 1 }]);
   assert.equal((await call(c, "list_activities", { custom_sport: "dragon boat" })).structuredContent!.total, 1);
   assert.equal((await call(c, "list_activities", { custom_sport: "Bob's sport" })).isError, true);
+});
+
+test("get_training_load weekly adds the weekly balance; a sport filter limits load, monotony and ACWR but not CTL/ATL", async () => {
+  const db = openDb(":memory:");
+  const t = services(db);
+  db.prepare("INSERT INTO custom_sports (user_id, id, name) VALUES ('alice', 1, 'Dragon boat')").run();
+  db.prepare("UPDATE activities SET custom_sport_id = 1 WHERE user_id = 'alice' AND id = 1").run();
+  const { recomputeLoads } = await import("../src/analytics/recompute.ts");
+  recomputeLoads(t.repos, "alice", "2026-09-20", "2026-10-30");
+  const c = await connect(t, "alice");
+  const args = { from: "2026-09-28", to: "2026-10-11", granularity: "weekly" };
+
+  const all = (await call(c, "get_training_load", args)).structuredContent!.series;
+  assert.deepEqual(all.map((w: { week_start: string }) => w.week_start), ["2026-09-28", "2026-10-05"]);
+  assert.ok(all[0].training_stress > 0 && all[0].acwr > 0 && all[0].monotony > 0 && all[0].strain > 0, "load and balance are filled");
+  assert.ok(Math.abs(all[0].intensity_split_pct.easy + all[0].intensity_split_pct.moderate + all[0].intensity_split_pct.hard - 100) < 0.2);
+  assert.deepEqual(all[1].sport_mix.map((s: { sport: string }) => s.sport).sort(), ["running", "strength"]);
+  assert.deepEqual(all[0].sport_mix.map((s: { sport: string }) => s.sport), ["Dragon boat"]);
+
+  const own = (await call(c, "get_training_load", { ...args, custom_sport: "dragon boat" })).structuredContent!.series;
+  assert.deepEqual(own.map((w: { training_stress: number }) => w.training_stress), [all[0].training_stress, 0], "only the Dragon boat run counts");
+  assert.deepEqual(own.map((w: { ctl: number }) => w.ctl), all.map((w: { ctl: number }) => w.ctl), "CTL stays the whole-athlete value");
+  assert.equal((await call(c, "get_training_load", { ...args, custom_sport: "nope" })).isError, true);
+  assert.equal((await call(c, "get_training_load", { from: "2026-10-01", to: "2026-10-10", custom_sport: "Dragon boat" })).isError, true, "filter needs weekly");
 });
