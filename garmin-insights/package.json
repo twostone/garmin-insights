@@ -30,7 +30,7 @@
   "devDependencies": {
     "@fontsource/barlow": "^5.3.0",
     "@fontsource/barlow-condensed": "^5.3.0",
-    "@inlang/paraglide-js": "^2.29.3",
+    "@inlang/paraglide-js": "^3.0.0",
     "@inlang/plugin-message-format": "^4.5.6",
     "@modelcontextprotocol/client": "2.4.0",
     "@sveltejs/adapter-static": "^3.0.10",
