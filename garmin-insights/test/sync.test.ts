@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { zipSync } from "fflate";
 import { createFitStore } from "../src/fit/store.ts";
 import { GarminKeyError, type GarminApi, type SummarizedActivity } from "../src/garmin/client.ts";
-import { createSyncWorker, FLOOR_DATE } from "../src/sync/worker.ts";
+import { ActivityNotFoundError, createSyncWorker, FLOOR_DATE, SyncBusyError } from "../src/sync/worker.ts";
 import { multisportFit, runFit, strengthFit } from "./fit-fixtures.ts";
 import { memoryRepos, seedUser } from "./helpers.ts";
 
@@ -223,4 +223,48 @@ test("multisport backfill: an existing mirror walks the activity history once mo
   s.tick(3600_000);
   await s.worker.trigger("u1");
   assert.equal(s.g.calls.search.length, 1, "no second backfill");
+});
+
+test("resync refetches an old activity's summary and FIT file, whatever state the file was in", async () => {
+  const list = [dto(1, "2026-10-28"), dto(4, "2026-03-10")];
+  const s = setup(list);
+  await s.worker.trigger("u1");
+  assert.equal(s.repos.activities.get("u1", 4)!.fit_status, "failed");
+  // Edited at Garmin long after the overlap window, and the file is readable now.
+  list[1] = { ...list[1]!, activityName: "Renamed" };
+  s.g.api.downloadActivityZip = async () => zipSync({ "4_ACTIVITY.fit": runFit() });
+  s.changed.length = 0;
+  assert.equal(await s.worker.resyncActivity("u1", 4), "done");
+  const a = s.repos.activities.get("u1", 4)!;
+  assert.equal(a.name, "Renamed");
+  assert.equal(a.fit_status, "done");
+  assert.ok(s.repos.activities.samples("u1", 4).length > 0);
+  assert.deepEqual(s.changed, ["2026-03-10"]);
+  // A file that is done is downloaded again too.
+  const zips: number[] = [];
+  s.g.api.downloadActivityZip = async (id) => (zips.push(id), zipSync({ [`${id}_ACTIVITY.fit`]: runFit() }));
+  await s.worker.resyncActivity("u1", 1);
+  assert.deepEqual(zips, [1]);
+});
+
+test("resync: unknown or another user's activity is not found, and it is refused while a run is going", async () => {
+  const s = setup([dto(1, "2026-10-28")]);
+  await s.worker.trigger("u1");
+  seedUser(s.repos, "u2");
+  await assert.rejects(s.worker.resyncActivity("u2", 1), ActivityNotFoundError);
+  await assert.rejects(s.worker.resyncActivity("u1", 999), ActivityNotFoundError);
+  const run = s.worker.trigger("u1");
+  await assert.rejects(s.worker.resyncActivity("u1", 1), SyncBusyError);
+  await run;
+  assert.equal(await s.worker.resyncActivity("u1", 1), "done");
+});
+
+test("resync: Garmin refusing the key reports it", async () => {
+  const s = setup([dto(1, "2026-10-28")]);
+  await s.worker.trigger("u1");
+  s.g.api.searchActivities = async () => {
+    throw new GarminKeyError("invalid");
+  };
+  await assert.rejects(s.worker.resyncActivity("u1", 1), GarminKeyError);
+  assert.deepEqual(s.invalid, ["u1"]);
 });

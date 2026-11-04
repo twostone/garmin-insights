@@ -5,7 +5,11 @@ import { activityAnalysis, parseSummary } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
 import { strengthVolume } from "../analytics/strength.ts";
 import type { FitStore } from "../fit/store.ts";
+import { GarminKeyError } from "../garmin/client.ts";
+import { logger } from "../log.ts";
+import type { KeyService } from "../garmin/keys.ts";
 import type { Repos } from "../repo/index.ts";
+import { ActivityNotFoundError, SyncBusyError, type SyncWorker } from "../sync/worker.ts";
 import type { Env } from "../types.ts";
 import { customSportQuery, dateSchema, errors, idParam, json, sportSchema, userOf } from "./common.ts";
 
@@ -44,10 +48,11 @@ const legSchema = z.object({
   id: z.number(), sport: z.string(), garmin_type: z.string(), start_offset_s: z.number(), duration_s: z.number().nullable(), avg_hr: z.number().nullable(), tss: z.number().nullable(),
 });
 
+const log = logger("api");
 const MAX_SAMPLES = 5000;
 const DEFAULT_SAMPLES = 1500;
 
-export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
+export function activityRoutes(deps: { repos: Repos; fit: FitStore; keys: KeyService; sync: SyncWorker }) {
   const { repos } = deps;
   return new OpenAPIHono<Env>()
     .openapi(
@@ -100,6 +105,27 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore }) {
           summary: parseSummary(repos.activities.summaryJson(user, activity.id)),
           legs: legOverview(activity, legs),
         }, 200);
+      },
+    )
+    .openapi(
+      createRoute({
+        method: "post",
+        path: "/activities/{id}/resync",
+        request: { params: idParam },
+        responses: { 200: json(z.object({ fit_status: z.enum(["done", "none", "failed"]) }), "Summary and FIT file fetched again"), ...errors(404, 409, 502) },
+      }),
+      async (c) => {
+        const user = userOf(c).id;
+        if (deps.keys.status(user).status !== "ok") return c.json({ error: "no_key" }, 409);
+        try {
+          return c.json({ fit_status: await deps.sync.resyncActivity(user, c.req.valid("param").id) }, 200);
+        } catch (e) {
+          if (e instanceof ActivityNotFoundError) return c.json({ error: "not_found" }, 404);
+          if (e instanceof SyncBusyError) return c.json({ error: "sync_running" }, 409);
+          if (e instanceof GarminKeyError) return c.json({ error: "no_key" }, 409);
+          log.warn("resync_failed", { err: e });
+          return c.json({ error: "garmin_failed" }, 502);
+        }
       },
     )
     .openapi(
