@@ -17,8 +17,9 @@ README.md, LICENSE       Installation, Entwicklung (öffentlich); Apache-2.0
 AGENTS.md                diese Datei
 docs/                    garmin-api.md (Spike: Endpunkte, Limits), garmin-personal-api.openapi.json (Garmins Spec, Quelle für schema.d.ts)
 release-please-config.json, .release-please-manifest.json   Release-Automatik (Version, Changelog)
-.github/workflows/       ci.yml (Tests, Docker-Build, Smoke-Test), release.yml (Release Please, Image), lint-pr-title.yml
-renovate.json            hält Actions, npm und Docker-Basisimage aktuell (gruppierte PRs)
+.github/workflows/       ci.yml (→ hassio-workflows app-ci), release.yml (Release Please, Image + Dispatch an hassio-apps), lint-pr-title.yml
+renovate.json            Renovate: Preset aus hassio-workflows + projektspezifische Regeln
+scripts/smoke.sh         Smoke-Test des Images (von der CI aufgerufen)
 garmin-insights/         die App (Docker-Build-Kontext); Ordnername ≠ Slug (`garmin_insights`, nie ändern)
   config.yaml            App-Konfiguration (Version pflegt Release Please); translations/{de,en}.yaml = Optionsnamen
   Dockerfile             zweistufig, node:24-alpine; DOCS.md = Anleitung in der HA-Oberfläche
@@ -93,6 +94,11 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
   `garmin-insights/config.yaml` (Zeile mit `# x-release-please-version`), `package.json`, `package-lock.json` und `CHANGELOG.md`
   ändert. Mergen des PR ist der Release (Tag `vX.Y.Z`, GitHub-Release, dann Tests und Image-Build). **Version, Tag und Changelog
   nie von Hand ändern**, die Annotation in `config.yaml` nicht entfernen.
+- **Gemeinsame Workflows:** `ci.yml`, `publish` und `lint-pr-title.yml` rufen die Workflows aus
+  [twostone/hassio-workflows](https://github.com/twostone/hassio-workflows) auf (App-Linter, Hadolint, Tests, Docker-Build,
+  `scripts/smoke.sh <image>`; Image-Push und danach `repository_dispatch` an
+  [twostone/hassio-apps](https://github.com/twostone/hassio-apps), Secret `DISPATCH_TOKEN`). Dort holt der
+  `repository-updater` die neueste Nicht-Prerelease-Release dieses Repos ins Verzeichnis `garmin_insights/`.
 - **Actions nur mit vollem Commit-SHA pinnen** (Kommentar mit Version), Renovate aktualisiert sie. Rechte in Workflows minimal.
 - **`image:` in `config.yaml`** steht ohne Tag (`ghcr.io/twostone/garmin-insights`), HA hängt `version` als Tag an.
 - **Add-on-Build:** Kein `build.yaml`, kein `BUILD_FROM` (seit Supervisor 2026.04 obsolet). Das Frontend wird auf der

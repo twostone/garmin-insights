@@ -13,7 +13,6 @@ homeassistant: "2026.10.1"
 # Prebuilt by the release workflow. No tag here: Home Assistant appends "version" as the tag.
 image: ghcr.io/twostone/garmin-insights
 ingress: true
-ingress_port: 8099
 panel_icon: mdi:run-fast
 panel_title: Garmin Insights
 # Every Home Assistant user gets their own Garmin key and data; the app separates them by user id.

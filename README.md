@@ -25,8 +25,10 @@ Voraussetzung: Home Assistant **2026.10.1 oder neuer** mit App-Store (Home Assis
 1. In Home Assistant: *Einstellungen → Apps → App-Store → ⋮ → Repositories* und eintragen:
 
    ```
-   https://github.com/twostone/garmin-insights
+   https://github.com/twostone/hassio-apps
    ```
+
+   Das ist das gemeinsame Repository aller twostone-Apps; es wird nach jedem Release automatisch aktualisiert.
 
 2. „Garmin Insights“ installieren und starten, danach „In Seitenleiste anzeigen“.
 3. In der App den Garmin-Key eintragen (siehe DOCS.md). Für den Zugang von außen die Optionen `ha_external_url` und
