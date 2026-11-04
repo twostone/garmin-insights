@@ -316,3 +316,19 @@ test("paddling: analysis block on the activity and weekly trends per own sport",
   assert.deepEqual(await (await t.as("bob").get("/analytics/paddling?from=2026-10-01&to=2026-10-31")).json(), []);
   assert.equal((await a.get("/analytics/paddling?from=2026-10-31&to=2026-10-01")).status, 400);
 });
+
+test("resync of one activity: no key 409, unknown or another user's activity 404, else the new FIT status", async () => {
+  const t = setup();
+  seed(t);
+  const a = t.as("alice");
+  assert.deepEqual(await (await a.send("POST", "/activities/1/resync")).json(), { error: "no_key" });
+  await a.send("PUT", "/garmin/key", { key: "good" });
+  await t.sync.trigger("alice"); // the first sync the key starts
+  assert.equal((await a.send("POST", "/activities/999/resync")).status, 404);
+  const ok = await a.send("POST", "/activities/1/resync");
+  assert.equal(ok.status, 200);
+  assert.deepEqual(await ok.json(), { fit_status: "none" }, "the stand-in Garmin has no file");
+  await t.as("bob").send("PUT", "/garmin/key", { key: "good" });
+  await t.sync.trigger("bob");
+  assert.equal((await t.as("bob").send("POST", "/activities/2/resync")).status, 404);
+});

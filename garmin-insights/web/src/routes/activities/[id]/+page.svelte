@@ -52,6 +52,23 @@
     await Promise.all([detail.reload(), customSports.reload()]);
   }
 
+  // Fetches summary and FIT file of this activity again from Garmin, then shows the new state.
+  let resyncing = $state(false);
+  let resyncError = $state<string | null>(null);
+  async function resync() {
+    resyncing = true;
+    resyncError = null;
+    try {
+      await unwrap(api.activities[":id"].resync.$post({ param: { id } }));
+      for (const r of [detail, samples, laps, strength, analysis]) void r.reload();
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : null;
+      resyncError = code === "sync_running" ? m.detail_resync_running() : code === "no_key" ? m.detail_resync_no_key() : m.detail_resync_failed();
+    } finally {
+      resyncing = false;
+    }
+  }
+
   async function downloadFit() {
     const res = await api.activities[":id"].fit.$get({ param: { id } });
     if (!res.ok) return;
@@ -230,9 +247,13 @@
   {/if}
 
   <!-- A leg filled from its parent's file has none of its own; the parent offers the whole file. -->
-  {#if a.fit_status === "done" && a.parent_id === null}
-    <p><button type="button" onclick={downloadFit}>{m.detail_download_fit()}</button></p>
-  {/if}
+  <p class="actions">
+    {#if a.fit_status === "done" && a.parent_id === null}
+      <button type="button" onclick={downloadFit}>{m.detail_download_fit()}</button>
+    {/if}
+    <button type="button" onclick={resync} disabled={resyncing}>{resyncing ? m.detail_resync_busy() : m.detail_resync()}</button>
+  </p>
+  {#if resyncError}<p class="danger" role="alert">{resyncError}</p>{/if}
 {:else}
   <p class="muted">{m.loading()}</p>
 {/if}
@@ -241,4 +262,5 @@
   .detail-head { border-radius: var(--radius); padding: 1.1rem 1rem; margin-bottom: 0.9rem; color: #fff; }
   .detail-head p { margin: 0 0 0.2rem; opacity: 0.88; font-size: 0.9rem; }
   .detail-head h1 { margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 </style>

@@ -42,6 +42,14 @@ export type SyncProgress = {
   fit: { done: number; pending: number };
 };
 
+type FitStatus = "done" | "none" | "failed";
+type FitOutcome = { status: FitStatus; filled: number };
+
+/** The activity is not in the user's mirror. */
+export class ActivityNotFoundError extends Error {}
+/** A sync run for the user is in progress. */
+export class SyncBusyError extends Error {}
+
 export type SyncDeps = {
   repos: Repos;
   garmin: (userId: string) => GarminApi;
@@ -205,6 +213,32 @@ export function createSyncWorker(deps: SyncDeps) {
     repos.syncState.save(userId, "zones", { last_sync_at: new Date(now()).toISOString(), last_error: null, items: 1 });
   }
 
+  /**
+   * Downloads and parses one activity's FIT file and stores its detail. Returns the new FIT status. A broken file must not
+   * stop the rest of a run, so it is marked failed and left alone; only a refused key is rethrown.
+   */
+  async function processFit(userId: string, api: GarminApi, id: number): Promise<FitOutcome> {
+    try {
+      const zip = await api.downloadActivityZip(id);
+      const bytes = zip ? fitFromZip(zip) : null;
+      if (!bytes) {
+        if (fillLegFromParent(userId, id)) return { status: "done", filled: 1 };
+        repos.activities.setFitStatus(userId, id, "none");
+        return { status: "none", filled: 0 };
+      }
+      deps.fit.save(userId, id, bytes);
+      const parsed = parseFit(bytes);
+      repos.activities.replaceDetail(userId, id, { samples: parsed.samples, laps: parsed.laps, sets: parsed.sets });
+      repos.activities.setFitStatus(userId, id, "done");
+      return { status: "done", filled: 1 + fillLegsOf(userId, id, parsed) };
+    } catch (e) {
+      if (e instanceof GarminKeyError) throw e;
+      log.warn("fit_failed", { activity: id, err: e });
+      repos.activities.setFitStatus(userId, id, "failed");
+      return { status: "failed", filled: 0 };
+    }
+  }
+
   /** Downloads and parses the FIT files of activities that have none yet. Returns the oldest date touched. */
   async function syncFit(userId: string, api: GarminApi, deadline: number): Promise<string | null> {
     let touched: string | null = null;
@@ -215,33 +249,36 @@ export function createSyncWorker(deps: SyncDeps) {
       if (!batch.length) break;
       for (const { id, date } of batch) {
         if (now() >= deadline) break;
-        try {
-          const zip = await api.downloadActivityZip(id);
-          const bytes = zip ? fitFromZip(zip) : null;
-          if (!bytes) {
-            if (fillLegFromParent(userId, id)) {
-              processed++;
-              if (!touched || date < touched) touched = date;
-            } else repos.activities.setFitStatus(userId, id, "none");
-            continue;
-          }
-          deps.fit.save(userId, id, bytes);
-          const parsed = parseFit(bytes);
-          repos.activities.replaceDetail(userId, id, { samples: parsed.samples, laps: parsed.laps, sets: parsed.sets });
-          repos.activities.setFitStatus(userId, id, "done");
-          processed += 1 + fillLegsOf(userId, id, parsed);
-          if (!touched || date < touched) touched = date;
-        } catch (e) {
-          if (e instanceof GarminKeyError) throw e;
-          // One broken file must not stop the rest; it is marked failed and left alone.
-          log.warn("fit_failed", { activity: id, err: e });
-          repos.activities.setFitStatus(userId, id, "failed");
-        }
+        const { filled } = await processFit(userId, api, id);
+        processed += filled;
+        if (filled && (!touched || date < touched)) touched = date;
       }
     }
     repos.syncState.save(userId, "fit", { last_sync_at: new Date(now()).toISOString(), items: repos.activities.count(userId) - repos.activities.pendingFitCount(userId) });
     log.debug("fit_done", { processed });
     return touched;
+  }
+
+  /**
+   * Fetches one stored activity again: its summary (from the list of the days around it, the only endpoint whose shape
+   * the mapping knows) and its FIT file, whatever state that file was in. Resyncing a multisport parent refills only the
+   * legs that have no detail yet; a leg is resynced on its own.
+   */
+  async function resync(userId: string, id: number): Promise<FitStatus> {
+    const activity = repos.activities.get(userId, id);
+    if (!activity) throw new ActivityNotFoundError();
+    const api = deps.garmin(userId);
+    try {
+      // The stored date is local, Garmin's search window too, but the two can differ by a day around midnight UTC.
+      await fetchActivities(userId, api, addDays(activity.date, -1), addDays(activity.date, 1));
+      const { status } = await processFit(userId, api, id);
+      deps.onChanged(userId, activity.date);
+      log.info("activity_resync", { activity: id, fit_status: status });
+      return status;
+    } catch (e) {
+      if (e instanceof GarminKeyError) await deps.onKeyInvalid(userId);
+      throw e;
+    }
   }
 
   async function run(userId: string): Promise<void> {
@@ -312,6 +349,16 @@ export function createSyncWorker(deps: SyncDeps) {
     }
   }
 
+  /** Resyncs one activity; refused while a run for the user is going, since both would write the same rows. */
+  function resyncActivity(userId: string, id: number): Promise<FitStatus> {
+    if (running.has(userId)) return Promise.reject(new SyncBusyError());
+    // Released before the caller sees the result, so a resync right after this one is not refused.
+    const p = resync(userId, id).finally(() => running.delete(userId));
+    // Registered like a run, so a run triggered meanwhile does not overlap it (the next scheduled run catches up).
+    running.set(userId, p.then(() => undefined, () => undefined));
+    return p;
+  }
+
   /** Starts a run unless one is already going; resolves when it ends. */
   function trigger(userId: string): Promise<void> {
     const existing = running.get(userId);
@@ -342,6 +389,7 @@ export function createSyncWorker(deps: SyncDeps) {
 
   return {
     trigger,
+    resyncActivity,
     progress,
     isRunning: (userId: string) => running.has(userId),
     start(intervalMs: number): void {
