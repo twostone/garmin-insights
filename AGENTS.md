@@ -82,7 +82,9 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
 - **MCP**: nur kuratierte Tools (kein SQL), zod-Schemas, strukturierte Outputs, `readOnlyHint` (außer `trigger_sync`), pro
   Request ein neuer Server (stateless), auf den User aus dem Token gescopt. Ausgaben englisch, metrische Einheiten.
   **Das MCP-SDK v2 ist exakt gepinnt** (`@modelcontextprotocol/server`/`client`); Updates bewusst und einzeln.
-- **SvelteKit bleibt auf 2.x**, solange `@vite-pwa/sveltekit` Kit 3 nicht unterstützt (adapter-static 3.x dazu).
+- **SvelteKit bleibt auf 2.x** (adapter-static 3.x dazu): Kit 3 braucht `@vite-pwa/sveltekit` 2, und das bleibt auf 1.x,
+  weil sein `generateSW` `expiration` in `runtimeCaching` ignoriert (kein `ExpirationPlugin` im Service Worker, der Cache
+  `gi-api` wüchse unbegrenzt). Die Umstellung (`withPwa`, Kit-Optionen in `vite.config.ts`, `magicast`) ist erprobt.
 - **TypeScript < 7** (svelte-check), `tsx` bleibt Runtime-Dependency (Container startet per `node --import tsx`).
 
 ## CI und Releases
