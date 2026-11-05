@@ -21,7 +21,7 @@
       "rangeStrategy": "pin"
     },
     {
-      "description": "SvelteKit 3 braucht @vite-pwa/sveltekit mit Kit-3-Support (heute nur Kit 2) und adapter-static 4",
+      "description": "SvelteKit 3 braucht @vite-pwa/sveltekit 2 (siehe nächste Regel) und adapter-static 4",
       "matchPackageNames": [
         "@sveltejs/kit",
         "@sveltejs/adapter-static"
@@ -30,6 +30,13 @@
         "major"
       ],
       "enabled": false
+    },
+    {
+      "description": "@vite-pwa/sveltekit 2 ignoriert `expiration` in runtimeCaching (kein ExpirationPlugin im Service Worker), siehe AGENTS.md",
+      "matchPackageNames": [
+        "@vite-pwa/sveltekit"
+      ],
+      "allowedVersions": "<2"
     }
   ]
 }
