@@ -15,6 +15,7 @@ function twoUsers() {
     laps: [{ idx: 0, start_s: 0, duration_s: 10, distance_m: 30, avg_hr: 100, max_hr: 110, avg_power: null, avg_speed: 3, avg_cadence: null, ascent_m: 0 }],
     sets: [{ idx: 0, start_s: 0, duration_s: 30, set_type: "active", exercise: "squat", reps: 5, weight_kg: 100 }],
   });
+  repos.activities.replaceExercises("alice", 2, [{ exercise: "squat", sets: 3, reps: 15, volume_kg: 900, max_weight_kg: 70 }]);
   repos.health.dailies.upsertMany("alice", [{ date: "2026-10-01", steps: 9000, resting_hr: 50, min_hr: 45, max_hr: 150, stress_avg: 30, body_battery_high: 90, body_battery_low: 10, active_minutes: 30 }]);
   repos.health.sleep.upsertMany("alice", [{ date: "2026-10-01", sleep_s: 28000, deep_s: 5000, light_s: 15000, rem_s: 6000, awake_s: 2000, score: 80, avg_spo2: 95, avg_respiration: 14, avg_stress: 20, avg_hr: 50 }]);
   repos.health.hrv.upsertMany("alice", [{ date: "2026-10-01", last_night_avg: 60, weekly_avg: 58, last_night_5min_high: 80, baseline_low: 50, baseline_high: 70, status: "BALANCED" }]);
@@ -36,6 +37,9 @@ test("activities: lists, counts, gets and detail rows only see the own user", ()
   assert.equal(r.activities.sets("bob", 1).length, 0);
   assert.equal(r.activities.setsInRange("bob", "2026-01-01", "2026-12-31").length, 0);
   assert.equal(r.activities.setsInRange("alice", "2026-01-01", "2026-12-31").length, 1);
+  assert.equal(r.activities.exercises("bob", 2).length, 0);
+  assert.equal(r.activities.exercisesInRange("bob", "2026-01-01", "2026-12-31").length, 0);
+  assert.equal(r.activities.exercisesInRange("alice", "2026-01-01", "2026-12-31").length, 1);
   assert.equal(r.activities.calendar("bob", "2026-10-01", "2026-10-31").length, 1);
   assert.equal(r.activities.pendingFit("bob", 10).length, 1);
   assert.equal(r.activities.summaryJson("bob", 2), undefined);

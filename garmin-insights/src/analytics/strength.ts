@@ -22,7 +22,7 @@ export type StrengthSummary = { byExercise: ExerciseVolume[]; byMuscleGroup: Mus
 const epley = (kg: number, reps: number) => kg * (1 + reps / 30);
 
 /** Volume = reps x weight, over active sets only. Sets without reps or weight (planks) count as sets with zero volume. */
-export function strengthVolume(sets: readonly Pick<StrengthSetWithActivity, "set_type" | "exercise" | "reps" | "weight_kg">[]): StrengthSummary {
+export function exerciseTotals(sets: readonly Pick<StrengthSetWithActivity, "set_type" | "exercise" | "reps" | "weight_kg">[]): ExerciseVolume[] {
   const byExercise = new Map<string, ExerciseVolume>();
   for (const s of sets) {
     if (s.set_type !== "active") continue;
@@ -39,7 +39,31 @@ export function strengthVolume(sets: readonly Pick<StrengthSetWithActivity, "set
     }
     byExercise.set(exercise, e);
   }
-  const exercises = [...byExercise.values()].sort((a, b) => b.volume_kg - a.volume_kg || a.exercise.localeCompare(b.exercise));
+  return [...byExercise.values()];
+}
+
+/** Garmin's own totals of an activity's exercises (no per-set data, so no estimated 1RM). */
+export const exerciseTotalsFromSummary = (rows: readonly { exercise: string; sets: number; reps: number; volume_kg: number; max_weight_kg: number | null }[]): ExerciseVolume[] =>
+  rows.map((r) => ({ ...r, muscle_group: muscleGroupOf(r.exercise), best_e1rm_kg: null }));
+
+const maxOrNull = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b));
+
+/** Merges the totals of one or many activities per exercise, then per muscle group. */
+export function summarizeExercises(totals: readonly ExerciseVolume[]): StrengthSummary {
+  const merged = new Map<string, ExerciseVolume>();
+  for (const t of totals) {
+    const e = merged.get(t.exercise);
+    if (!e) {
+      merged.set(t.exercise, { ...t });
+      continue;
+    }
+    e.sets += t.sets;
+    e.reps += t.reps;
+    e.volume_kg += t.volume_kg;
+    e.max_weight_kg = maxOrNull(e.max_weight_kg, t.max_weight_kg);
+    e.best_e1rm_kg = maxOrNull(e.best_e1rm_kg, t.best_e1rm_kg);
+  }
+  const exercises = [...merged.values()].sort((a, b) => b.volume_kg - a.volume_kg || a.exercise.localeCompare(b.exercise));
   const groups = new Map<string, MuscleVolume>();
   for (const e of exercises) {
     const g = groups.get(e.muscle_group) ?? { group: e.muscle_group, sets: 0, volume_kg: 0 };
@@ -54,3 +78,5 @@ export function strengthVolume(sets: readonly Pick<StrengthSetWithActivity, "set
     totalSets: exercises.reduce((a, e) => a + e.sets, 0),
   };
 }
+
+export const strengthVolume = (sets: Parameters<typeof exerciseTotals>[0]): StrengthSummary => summarizeExercises(exerciseTotals(sets));

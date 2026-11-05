@@ -46,7 +46,7 @@ test("v3 moves existing paddle and rowing activities to their new sports and lea
 test("every table with user data carries user_id and cascades from users", () => {
   const db = openDb(":memory:");
   const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'users'").all() as { name: string }[]).map((t) => t.name);
-  assert.equal(tables.length, 13);
+  assert.equal(tables.length, 14);
   for (const t of tables) {
     const cols = (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string; pk: number }[]);
     assert.ok(cols.some((c) => c.name === "user_id" && c.pk >= 1), `${t}: user_id is part of the primary key`);
@@ -55,4 +55,28 @@ test("every table with user data carries user_id and cascades from users", () =>
   db.prepare("INSERT INTO dailies (user_id, date, steps) VALUES ('u', '2026-01-01', 1)").run();
   db.prepare("DELETE FROM users WHERE id = 'u'").run();
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM dailies").get() as { n: number }).n, 0);
+});
+
+test("v4 fills the exercise totals of existing strength activities from their stored Garmin summary", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "gi-db-")), "v3.db");
+  const old = new DatabaseSync(path);
+  for (const m of MIGRATIONS.slice(0, 3)) old.exec(m);
+  old.exec("PRAGMA user_version = 3");
+  old.prepare("INSERT INTO users (id) VALUES ('u1')").run();
+  const insert = old.prepare("INSERT INTO activities (user_id, id, start_utc, date, type_key, sport, summary_json) VALUES ('u1', ?, '2026-10-01T10:00:00Z', '2026-10-01', 'strength_training', 'strength', ?)");
+  const summary = { summarizedExerciseSets: [
+    { category: "ROW", subCategory: "BENT_OVER_ROW_WITH_BARBELL", reps: 10, volume: 900000, sets: 2, maxWeight: 90000 },
+    { category: "LATERAL_RAISE", reps: 30, volume: 300000, sets: 3 },
+  ] };
+  insert.run(1, JSON.stringify(summary));
+  insert.run(2, JSON.stringify({ totalSets: 3 }));
+  old.close();
+
+  const db = openDb(path);
+  const rows = db.prepare("SELECT activity_id, exercise, sets, reps, volume_kg, max_weight_kg FROM strength_exercises ORDER BY activity_id, idx").all();
+  assert.deepEqual(rows.map((r) => ({ ...r })), [
+    { activity_id: 1, exercise: "row", sets: 2, reps: 10, volume_kg: 900, max_weight_kg: 90 },
+    { activity_id: 1, exercise: "lateral_raise", sets: 3, reps: 30, volume_kg: 300, max_weight_kg: null },
+  ]);
+  db.close();
 });

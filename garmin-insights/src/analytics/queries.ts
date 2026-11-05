@@ -1,5 +1,5 @@
 import { addDays, diffDays, todayLocal, weekStart } from "../dates.ts";
-import type { ActivityRow, SportFilter } from "../repo/activities.ts";
+import type { ActivityRow, SportFilter, StrengthSetWithActivity } from "../repo/activities.ts";
 import type { AthleteSettings } from "../repo/athlete.ts";
 import type { Repos } from "../repo/index.ts";
 import { bestEfforts, decoupling, meanMaxPower, POWER_DURATIONS_S, RUN_DISTANCES_M, type BestEffort, type MeanMax } from "./efforts.ts";
@@ -8,7 +8,7 @@ import { BASELINE_DAYS, readiness, type ReadinessDay } from "./readiness.ts";
 import { perSecond, type Sample } from "./load.ts";
 import { paddleMetrics, paddleMetricsFromSummary, weeklyPaddling, type PaddleMetrics } from "./paddling.ts";
 import { analysisSamples } from "./recompute.ts";
-import { strengthVolume } from "./strength.ts";
+import { exerciseTotals, exerciseTotalsFromSummary, summarizeExercises, type ExerciseVolume, type StrengthSummary } from "./strength.ts";
 import { volumeBy } from "./volume.ts";
 import { HR_ZONE_COUNT, LEAD_IN_DAYS, weekBalances, type WeeklyActivity } from "./weekly.ts";
 import { hrZonesFromMax, paceZonesFromThreshold, powerZonesFromFtp, timeInZones, type ZoneConfig } from "./zones.ts";
@@ -161,17 +161,46 @@ export function paddlingTrends(repos: Repos, userId: string, o: SportFilter & { 
   );
 }
 
+/**
+ * Strength of one activity. The exercise totals come from Garmin's summary when it has any: only they follow exercises
+ * corrected in Garmin Connect afterwards, the FIT file keeps the watch's guesses. Without them the FIT sets are summed up.
+ */
+export function strengthOfActivity(repos: Repos, userId: string, id: number): { summary: StrengthSummary; source: "garmin_summary" | "fit" } | null {
+  const fromSummary = repos.activities.exercises(userId, id);
+  if (fromSummary.length) return { summary: summarizeExercises(exerciseTotalsFromSummary(fromSummary)), source: "garmin_summary" };
+  const sets = repos.activities.sets(userId, id);
+  return sets.length ? { summary: summarizeExercises(exerciseTotals(sets)), source: "fit" } : null;
+}
+
 export function strengthInRange(repos: Repos, userId: string, o: { from: string; to: string }) {
-  const sets = repos.activities.setsInRange(userId, o.from, o.to);
+  // Per activity the summary wins over the FIT sets, see strengthOfActivity.
+  const perActivity = new Map<number, { date: string; totals: ExerciseVolume[] }>();
+  for (const e of repos.activities.exercisesInRange(userId, o.from, o.to)) {
+    const a = perActivity.get(e.activity_id) ?? { date: e.date, totals: [] };
+    a.totals.push(...exerciseTotalsFromSummary([e]));
+    perActivity.set(e.activity_id, a);
+  }
+  const fitSets = new Map<number, { date: string; sets: StrengthSetWithActivity[] }>();
+  for (const s of repos.activities.setsInRange(userId, o.from, o.to)) {
+    if (perActivity.has(s.activity_id)) continue;
+    const a = fitSets.get(s.activity_id) ?? { date: s.date, sets: [] };
+    a.sets.push(s);
+    fitSets.set(s.activity_id, a);
+  }
+  for (const [id, a] of fitSets) perActivity.set(id, { date: a.date, totals: exerciseTotals(a.sets) });
+
   const weekly = new Map<string, { week: string; sets: number; volume_kg: number }>();
-  for (const s of sets) {
-    const week = weekStart(s.date);
+  for (const { date, totals } of perActivity.values()) {
+    const week = weekStart(date);
     const w = weekly.get(week) ?? { week, sets: 0, volume_kg: 0 };
-    w.sets++;
-    w.volume_kg += (s.reps ?? 0) * (s.weight_kg ?? 0);
+    for (const t of totals) {
+      w.sets += t.sets;
+      w.volume_kg += t.volume_kg;
+    }
     weekly.set(week, w);
   }
-  return { ...strengthVolume(sets), weekly: [...weekly.values()].sort((a, b) => a.week.localeCompare(b.week)) };
+  const all = [...perActivity.values()].flatMap((a) => a.totals);
+  return { ...summarizeExercises(all), weekly: [...weekly.values()].sort((a, b) => a.week.localeCompare(b.week)) };
 }
 
 export function trendsInRange(repos: Repos, userId: string, o: { from: string; to: string }) {

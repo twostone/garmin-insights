@@ -1,5 +1,5 @@
 import type { DailySummary, HrvSummary, SleepSummary, SummarizedActivity, HeartRateZones } from "../garmin/client.ts";
-import type { ActivityInput } from "../repo/activities.ts";
+import type { ActivityInput, StrengthExerciseRow } from "../repo/activities.ts";
 import type { AthleteSettings } from "../repo/athlete.ts";
 import type { DailyRow, HrvRow, SleepRow } from "../repo/health.ts";
 import { sportOf } from "../sport.ts";
@@ -73,6 +73,21 @@ export function mapMultisport(a: SummarizedActivity): MultisportLink {
     (Array.isArray(extra.childIds) && extra.childIds.length > 0) ||
     a.activityType?.typeKey === "multi_sport";
   return { parent_id: parentId, is_multisport_parent: isParent && parentId === null ? 1 : 0 };
+}
+
+const GRAMS_PER_KG = 1000;
+
+/**
+ * The exercise totals Garmin keeps in the activity summary. Unlike the sets in the FIT file they follow what the user
+ * corrected in Garmin Connect afterwards. Weights come in grams; the category is lower-cased to the FIT's spelling.
+ */
+export function mapExercises(a: SummarizedActivity): StrengthExerciseRow[] {
+  return (a.summarizedExerciseSets ?? []).flatMap((e) => {
+    const exercise = typeof e.category === "string" ? e.category.toLowerCase() : null;
+    if (!exercise) return [];
+    const maxWeight = n(e.maxWeight);
+    return [{ exercise, sets: i(e.sets) ?? 0, reps: i(e.reps) ?? 0, volume_kg: (n(e.volume) ?? 0) / GRAMS_PER_KG, max_weight_kg: maxWeight === null ? null : maxWeight / GRAMS_PER_KG }];
+  });
 }
 
 const hasValue =(row: object, skip: string) => Object.entries(row).some(([k, v]) => k !== skip && v !== null);

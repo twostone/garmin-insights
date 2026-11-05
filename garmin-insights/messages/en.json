@@ -138,6 +138,7 @@
   "strength_weight": "Weight",
   "strength_rest": "Rest",
   "strength_all_sets": "All sets",
+  "strength_sets_from_watch": "The exercises in the set list come from the watch. Exercises changed afterwards in Garmin Connect only show in the summary above.",
   "strength_muscle_group": "Muscle group",
   "muscle_chest": "Chest",
   "muscle_back": "Back",

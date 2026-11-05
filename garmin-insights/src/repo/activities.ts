@@ -116,6 +116,9 @@ export type StrengthSetRow = {
   reps: number | null; weight_kg: number | null;
 };
 export type StrengthSetWithActivity = StrengthSetRow & { activity_id: number; date: string };
+/** One exercise of a strength activity as Garmin's summary totals it (sets of one category, corrected in Garmin Connect). */
+export type StrengthExerciseRow = { exercise: string; sets: number; reps: number; volume_kg: number; max_weight_kg: number | null };
+export type StrengthExerciseWithActivity = StrengthExerciseRow & { activity_id: number; date: string };
 
 export function activitiesRepo(db: DatabaseSync) {
   const upsert = db.prepare(
@@ -123,6 +126,7 @@ export function activitiesRepo(db: DatabaseSync) {
      ON CONFLICT(user_id, id) DO UPDATE SET ${SUMMARY_COLUMNS.map((c) => `${c} = excluded.${c}`).join(", ")}`,
   );
   const exists = db.prepare("SELECT 1 AS x FROM activities WHERE user_id = ? AND id = ?");
+  const insertExercise = db.prepare("INSERT INTO strength_exercises (user_id, activity_id, idx, exercise, sets, reps, volume_kg, max_weight_kg) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   const getLight = db.prepare(`SELECT ${LIGHT_COLUMNS} FROM ${FROM_ACTIVITIES} WHERE a.user_id = ? AND a.id = ?`);
   const getSummary = db.prepare("SELECT summary_json FROM activities WHERE user_id = ? AND id = ?");
 
@@ -240,6 +244,30 @@ export function activitiesRepo(db: DatabaseSync) {
            WHERE s.user_id = ? AND a.date >= ? AND a.date <= ? AND s.set_type = 'active' ORDER BY a.start_utc, s.idx`,
         )
         .all(userId, from, to) as StrengthSetWithActivity[],
+    /** Replaces the exercise totals of an activity; an empty list removes them (Garmin has no exercises for it any more). */
+    replaceExercises(userId: string, id: number, exercises: StrengthExerciseRow[]): void {
+      transaction(db, () => {
+        db.prepare("DELETE FROM strength_exercises WHERE user_id = ? AND activity_id = ?").run(userId, id);
+        exercises.forEach((e, idx) => insertExercise.run(userId, id, idx, e.exercise, e.sets, e.reps, e.volume_kg, e.max_weight_kg));
+      });
+    },
+    /** Garmin's exercise totals of one activity, a category once. Empty when Garmin sent none. */
+    exercises: (userId: string, id: number): StrengthExerciseRow[] =>
+      db
+        .prepare(
+          `SELECT exercise, SUM(sets) AS sets, SUM(reps) AS reps, SUM(volume_kg) AS volume_kg, MAX(max_weight_kg) AS max_weight_kg
+           FROM strength_exercises WHERE user_id = ? AND activity_id = ? GROUP BY exercise ORDER BY MIN(idx)`,
+        )
+        .all(userId, id) as StrengthExerciseRow[],
+    /** Garmin's exercise totals of all activities in a date range. */
+    exercisesInRange: (userId: string, from: string, to: string): StrengthExerciseWithActivity[] =>
+      db
+        .prepare(
+          `SELECT e.activity_id, a.date, e.exercise, SUM(e.sets) AS sets, SUM(e.reps) AS reps, SUM(e.volume_kg) AS volume_kg, MAX(e.max_weight_kg) AS max_weight_kg
+           FROM strength_exercises e JOIN activities a ON a.user_id = e.user_id AND a.id = e.activity_id
+           WHERE e.user_id = ? AND a.date >= ? AND a.date <= ? GROUP BY e.activity_id, e.exercise ORDER BY a.start_utc, MIN(e.idx)`,
+        )
+        .all(userId, from, to) as StrengthExerciseWithActivity[],
     deleteAll: (userId: string): void => void db.prepare("DELETE FROM activities WHERE user_id = ?").run(userId),
   };
 }

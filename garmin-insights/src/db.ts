@@ -194,6 +194,28 @@ export const MIGRATIONS: string[] = [
   UPDATE activities SET sport = 'paddling'
   WHERE type_key LIKE 'stand\\_up\\_paddleboarding%' ESCAPE '\\' OR type_key LIKE 'kayaking%' OR type_key LIKE 'canoeing%'
      OR type_key LIKE 'whitewater%' OR type_key LIKE 'paddling%' OR type_key LIKE 'outrigger%' OR type_key LIKE 'dragon\\_boat%' ESCAPE '\\';`,
+  // v4: exercise totals of a strength activity from Garmin's summary (`summarizedExerciseSets`). Exercises corrected in Garmin
+  // Connect afterwards reach only the summary, never the FIT file's sets. Existing rows are filled from the stored summary;
+  // Garmin sends grams, the table keeps kilograms and the category in the FIT's snake_case spelling.
+  `CREATE TABLE strength_exercises (
+    user_id TEXT NOT NULL,
+    activity_id INTEGER NOT NULL,
+    idx INTEGER NOT NULL,
+    exercise TEXT NOT NULL,
+    sets INTEGER NOT NULL,
+    reps INTEGER NOT NULL,
+    volume_kg REAL NOT NULL,
+    max_weight_kg REAL,
+    PRIMARY KEY (user_id, activity_id, idx),
+    FOREIGN KEY (user_id, activity_id) REFERENCES activities(user_id, id) ON DELETE CASCADE
+  ) STRICT, WITHOUT ROWID;
+
+  INSERT INTO strength_exercises (user_id, activity_id, idx, exercise, sets, reps, volume_kg, max_weight_kg)
+  SELECT a.user_id, a.id, e.key, lower(json_extract(e.value, '$.category')),
+         COALESCE(json_extract(e.value, '$.sets'), 0), COALESCE(json_extract(e.value, '$.reps'), 0),
+         COALESCE(json_extract(e.value, '$.volume'), 0) / 1000.0, json_extract(e.value, '$.maxWeight') / 1000.0
+  FROM activities a, json_each(a.summary_json, '$.summarizedExerciseSets') e
+  WHERE json_valid(a.summary_json) AND json_extract(e.value, '$.category') IS NOT NULL;`,
 ];
 
 function migrate(db: DatabaseSync): void {

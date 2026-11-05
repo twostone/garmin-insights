@@ -3,9 +3,9 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { downsample } from "../analytics/downsample.ts";
 import { legOverview, parentHr } from "../analytics/multisport.ts";
 import type { PaddleMetrics } from "../analytics/paddling.ts";
-import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, paddlingTrends, rangeDays, readinessOn, strengthInRange, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
+import { summarizeExercises } from "../analytics/strength.ts";
+import { activityAnalysis, athleteSnapshot, bestEffortsInRange, defaultRange, paddlingTrends, rangeDays, readinessOn, strengthInRange, strengthOfActivity, trendsInRange, volumeInRange, weeklyBalance, zoneDistribution } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
-import { strengthVolume } from "../analytics/strength.ts";
 import { isDate, todayLocal, weekStart } from "../dates.ts";
 import type { KeyService } from "../garmin/keys.ts";
 import type { ActivityRow } from "../repo/activities.ts";
@@ -167,8 +167,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
           .filter(([, z]) => z)
           .map(([k, z]) => [k, { zone_lower_bounds: z!.floors, seconds_below_zone_1: Math.round(z!.below), seconds_per_zone: z!.seconds.map(Math.round), source: z!.source }]),
       );
-      const sets = repos.activities.sets(uid, activity_id);
-      const strength = sets.length ? strengthVolume(sets) : null;
+      const strength = strengthOfActivity(repos, uid, activity_id)?.summary ?? null;
       const legs = repos.activities.legs(uid, activity_id);
       return result({
         activity: brief(parentHr(a, legs)),
@@ -229,7 +228,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
     "get_strength_sets",
     {
       title: "Get strength sets",
-      description: "Strength training from Garmin's recorded sets. With activity_id: every set (exercise category, reps, weight in kg) and totals. With from/to: volume (reps x kg) per exercise and muscle group over the range. Volume counts active sets only.",
+      description: "Strength training. With activity_id: every set the watch recorded (exercise category, reps, weight in kg; the categories are the watch's guesses and do not follow exercises corrected in Garmin Connect) and the totals per exercise, which do follow those corrections (they come from Garmin's activity summary, so they have no best_estimated_1rm_kg). With from/to: volume (reps x kg) per exercise and muscle group over the range. Volume counts active sets only.",
       inputSchema: z.object({ activity_id: z.number().int().positive().optional(), ...range }),
       outputSchema: z.object({
         sets: z.array(z.object({ set: z.number(), type: z.string(), exercise: z.string().nullable(), reps: z.number().nullable(), weight_kg: z.number().nullable(), duration_s: z.number().nullable() })),
@@ -246,7 +245,7 @@ export function registerTools(server: McpServer, deps: McpDeps, user: AppUser): 
         if (!repos.activities.has(uid, q.activity_id)) return failure("Activity not found.");
         const rows = repos.activities.sets(uid, q.activity_id);
         sets = rows.map((s) => ({ set: s.idx + 1, type: s.set_type, exercise: s.exercise, reps: s.reps, weight_kg: s.weight_kg, duration_s: round(s.duration_s, 0) }));
-        summary = strengthVolume(rows);
+        summary = strengthOfActivity(repos, uid, q.activity_id)?.summary ?? summarizeExercises([]);
       } else {
         const r = resolveRange(q, 90);
         const err = rangeError(r);
