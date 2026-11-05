@@ -13,6 +13,7 @@ import { loadOrCreateMasterKey } from "./crypto.ts";
 import { createMcpEndpoint } from "./mcp/server.ts";
 import { createServices } from "./services.ts";
 import { APP_VERSION } from "./server-info.ts";
+import { installShutdownHandlers } from "./shutdown.ts";
 
 // Options come from /data/options.json (Supervisor); environment variables override them for development and the smoke test.
 const log = logger("server");
@@ -35,8 +36,9 @@ const dataDir = resolve(process.env.DATA_DIR ?? "./data");
 const dbPath = process.env.DB_PATH ?? join(dataDir, "garmin-insights.db");
 if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
 // Only inside the app: the Supervisor injects SUPERVISOR_TOKEN (needs homeassistant_api in config.yaml).
+const db = openDb(dbPath);
 const services = createServices({
-  db: openDb(dbPath),
+  db,
   dataDir,
   masterKey: loadOrCreateMasterKey(join(dataDir, "secret.key")),
   supervisorToken: process.env.SUPERVISOR_TOKEN ?? null,
@@ -47,13 +49,14 @@ const api = createApi(services);
 services.sync.start(settings.syncIntervalMinutes * 60_000);
 const EXPIRY_CHECK_MS = 6 * 3600_000;
 void services.keys.checkExpiry();
-setInterval(() => void services.keys.checkExpiry(), EXPIRY_CHECK_MS).unref();
+const expiryTimer = setInterval(() => void services.keys.checkExpiry(), EXPIRY_CHECK_MS);
+expiryTimer.unref();
 const staticRoot = resolve(process.env.STATIC_DIR ?? "./dist");
 
 const ingressPort = Number(process.env.PORT ?? 8099);
-serve({ fetch: createIngressApp({ allowedIp: process.env.INGRESS_ONLY_IP, api, staticRoot, devUserId: process.env.DEV_USER_ID, mcpUrl: externalEnabled(settings) ? `${settings.appExternalUrl}/mcp` : null }).fetch, port: ingressPort }, (i) =>
+const servers = [serve({ fetch: createIngressApp({ allowedIp: process.env.INGRESS_ONLY_IP, api, staticRoot, devUserId: process.env.DEV_USER_ID, mcpUrl: externalEnabled(settings) ? `${settings.appExternalUrl}/mcp` : null }).fetch, port: ingressPort }, (i) =>
   log.info("ingress_listening", { port: i.port }),
-);
+)];
 
 if (externalEnabled(settings)) {
   const external = createExternalApp({
@@ -64,7 +67,17 @@ if (externalEnabled(settings)) {
     mcp: createMcpEndpoint(services),
     staticRoot,
   });
-  serve({ fetch: external.fetch, port: Number(process.env.EXTERNAL_PORT ?? 8100) }, (i) => log.info("external_listening", { port: i.port }));
+  servers.push(serve({ fetch: external.fetch, port: Number(process.env.EXTERNAL_PORT ?? 8100) }, (i) => log.info("external_listening", { port: i.port })));
 } else {
   log.info("external_disabled", { reason: "ha_external_url and app_external_url must both be set" });
 }
+
+// SIGTERM from `docker stop` / the Supervisor: stop accepting requests and the sync scheduler, close the database, exit 0 (not "error").
+installShutdownHandlers({
+  servers,
+  cleanup: () => {
+    clearInterval(expiryTimer);
+    services.sync.stop();
+    db.close();
+  },
+});

@@ -40,3 +40,18 @@ for _ in $(seq 1 30); do
 done
 [ "$code" = "403" ] || { echo "expected 403 from the ingress guard, got $code"; dump guarded; exit 1; }
 docker rm -f guarded
+
+# Shutdown: SIGTERM (what `ha apps stop` sends) must end the app cleanly with exit code 0 within the Supervisor's
+# 10 s timeout. Otherwise the Supervisor shows the app as "error" instead of "stopped".
+docker run -d --name stopping -p 8099:8099 -e INGRESS_ONLY_IP= "$IMAGE"
+for _ in $(seq 1 30); do
+  curl -fsS http://localhost:8099/api/context >/dev/null 2>&1 && break
+  sleep 1
+done
+start=$(date +%s)
+docker stop -t 10 stopping >/dev/null
+elapsed=$(( $(date +%s) - start ))
+exit_code=$(docker inspect -f '{{.State.ExitCode}}' stopping)
+[ "$exit_code" = "0" ] || { echo "expected exit code 0 after SIGTERM, got $exit_code"; dump stopping; exit 1; }
+[ "$elapsed" -lt 9 ] || { echo "stop took ${elapsed}s (limit 10 s)"; dump stopping; exit 1; }
+docker rm -f stopping
