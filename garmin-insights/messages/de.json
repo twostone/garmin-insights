@@ -138,6 +138,7 @@
   "strength_weight": "Gewicht",
   "strength_rest": "Pause",
   "strength_all_sets": "Alle Sätze",
+  "strength_sets_from_watch": "Die Übungen der Satzliste stammen von der Uhr. Nachträglich in Garmin Connect geänderte Übungen stehen nur in der Zusammenfassung oben.",
   "strength_muscle_group": "Muskelgruppe",
   "muscle_chest": "Brust",
   "muscle_back": "Rücken",

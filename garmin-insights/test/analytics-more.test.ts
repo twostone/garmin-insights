@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { bestEfforts, decoupling, meanMaxPower } from "../src/analytics/efforts.ts";
 import { hrZonesFromMax, paceZonesFromThreshold, powerZonesFromFtp, timeInZones } from "../src/analytics/zones.ts";
-import { MUSCLE_GROUP, strengthVolume } from "../src/analytics/strength.ts";
+import { exerciseTotalsFromSummary, MUSCLE_GROUP, strengthVolume, summarizeExercises } from "../src/analytics/strength.ts";
 import { healthTrends, pearson, rolling } from "../src/analytics/health.ts";
 import { volumeBy } from "../src/analytics/volume.ts";
 import type { Sample } from "../src/analytics/load.ts";
@@ -110,4 +110,15 @@ test("health: rolling mean ignores gaps, Pearson correlation, trends compare 7 d
   assert.ok(t.latest.restingHr.deltaVsBaseline! > 0);
   assert.ok(t.latest.hrv.deltaVsBaseline! < 0);
   close(t.correlations.restingHrVsAtl!, 0.6931032800836721, 1e-9); // step function against a ramp
+});
+
+test("strength: Garmin's exercise totals merge across activities and keep an estimated 1RM from sets", () => {
+  const fromSets = strengthVolume([{ set_type: "active", exercise: "row", reps: 5, weight_kg: 100 }]).byExercise;
+  const fromSummary = exerciseTotalsFromSummary([{ exercise: "row", sets: 4, reps: 20, volume_kg: 1800, max_weight_kg: 90 }, { exercise: "plyo", sets: 1, reps: 10, volume_kg: 50, max_weight_kg: null }]);
+  const r = summarizeExercises([...fromSets, ...fromSummary]);
+  const row = r.byExercise.find((e) => e.exercise === "row")!;
+  assert.deepEqual([row.sets, row.reps, row.volume_kg, row.max_weight_kg], [5, 25, 2300, 100]);
+  close(row.best_e1rm_kg!, 100 * (1 + 5 / 30), 1e-9);
+  assert.equal(r.byExercise.find((e) => e.exercise === "plyo")!.best_e1rm_kg, null);
+  assert.deepEqual(r.byMuscleGroup.map((g) => [g.group, g.volume_kg]), [["back", 2300], ["full_body", 50]]);
 });

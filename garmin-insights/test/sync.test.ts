@@ -125,7 +125,7 @@ test("the second run only fetches the newest days and keeps the finished backfil
   s.tick(3600_000);
   await s.worker.trigger("u1");
   assert.equal(s.g.calls.search.length, 1);
-  assert.match(s.g.calls.search[0]!, /^2026-10-2\d\.\.2026-10-30@0$/);
+  assert.equal(s.g.calls.search[0], "2026-10-16..2026-10-30@0"); // 14 days before the last run: edits made in Garmin Connect arrive
 });
 
 test("a run in progress is shared, not started twice", async () => {
@@ -267,4 +267,22 @@ test("resync: Garmin refusing the key reports it", async () => {
   };
   await assert.rejects(s.worker.resyncActivity("u1", 1), GarminKeyError);
   assert.deepEqual(s.invalid, ["u1"]);
+});
+
+test("exercises corrected in Garmin Connect replace the stored ones when the activity is read again", async () => {
+  const strength = { ...dto(2, "2026-10-27", "strength_training"), summarizedExerciseSets: [{ category: "SQUAT", reps: 10, volume: 600000, sets: 2, maxWeight: 60000 }] };
+  const s = setup([strength]);
+  await s.worker.trigger("u1");
+  assert.deepEqual(s.repos.activities.exercises("u1", 2).map((e) => ({ ...e })), [{ exercise: "squat", sets: 2, reps: 10, volume_kg: 600, max_weight_kg: 60 }]);
+
+  // Edited a week later in Garmin Connect: within the days a run re-reads.
+  strength.summarizedExerciseSets = [{ category: "LUNGE", reps: 10, volume: 400000, sets: 2, maxWeight: 40000 }];
+  s.tick(7 * 86400_000);
+  await s.worker.trigger("u1");
+  assert.deepEqual(s.repos.activities.exercises("u1", 2).map((e) => e.exercise), ["lunge"]);
+
+  // Garmin sends none any more: the stored ones go as well.
+  strength.summarizedExerciseSets = [];
+  await s.worker.resyncActivity("u1", 2);
+  assert.deepEqual(s.repos.activities.exercises("u1", 2), []);
 });

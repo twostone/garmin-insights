@@ -140,6 +140,7 @@ test("strength sets and the analysis of a run (zones from samples, decoupling, b
   const st = await (await a.get("/activities/2/strength")).json();
   assert.equal(st.sets.length, 5);
   assert.equal(st.totalVolumeKg, 600 + 500 + 1200);
+  assert.equal(st.source, "fit");
   const an = await (await a.get("/activities/1/analysis")).json();
   assert.equal(an.zones.hr.source, "samples");
   assert.equal(an.zones.hr.seconds.length, 5);
@@ -331,4 +332,19 @@ test("resync of one activity: no key 409, unknown or another user's activity 404
   await t.as("bob").send("PUT", "/garmin/key", { key: "good" });
   await t.sync.trigger("bob");
   assert.equal((await t.as("bob").send("POST", "/activities/2/resync")).status, 404);
+});
+
+test("strength: Garmin's exercise totals win over the FIT sets of the same activity", async () => {
+  const t = setup();
+  seed(t);
+  t.repos.activities.replaceExercises("alice", 2, [{ exercise: "lunge", sets: 5, reps: 25, volume_kg: 1000, max_weight_kg: 40 }]);
+  const a = t.as("alice");
+  const st = await (await a.get("/activities/2/strength")).json();
+  assert.equal(st.source, "garmin_summary");
+  assert.equal(st.sets.length, 5, "the set list stays the watch's");
+  assert.deepEqual(st.byExercise.map((e: { exercise: string }) => e.exercise), ["lunge"]);
+  assert.equal(st.totalVolumeKg, 1000);
+  const range = await (await a.get("/analytics/strength?from=2026-10-01&to=2026-10-31")).json();
+  assert.equal(range.totalVolumeKg, 1000);
+  assert.deepEqual(range.weekly.map((w: { volume_kg: number }) => w.volume_kg), [1000]);
 });

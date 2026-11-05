@@ -5,7 +5,7 @@ import { GarminKeyError, type GarminApi } from "../garmin/client.ts";
 import { logger } from "../log.ts";
 import type { Repos } from "../repo/index.ts";
 import { isSyncMarker, type SyncKind, type SyncMarker } from "../repo/sync-state.ts";
-import { mapActivity, mapDaily, mapHeartRateZones, mapHrv, mapMultisport, mapSleep } from "./map.ts";
+import { mapActivity, mapDaily, mapExercises, mapHeartRateZones, mapHrv, mapMultisport, mapSleep } from "./map.ts";
 
 const log = logger("sync");
 
@@ -16,6 +16,8 @@ const log = logger("sync");
 
 export const FLOOR_DATE = "2005-01-01"; // before Garmin Connect existed in a usable form: the backfill never goes further
 const REFRESH_OVERLAP_DAYS = 3; // re-fetch the last days on every run, late-arriving data (sleep, HRV) lands there
+// Activities are edited in Garmin Connect after the fact (e.g. the exercises of a strength training), so more days are re-read.
+const ACTIVITY_REFRESH_OVERLAP_DAYS = 14;
 const ACTIVITY_WINDOW_DAYS = 90;
 const ACTIVITY_PAGE_SIZE = 99;
 const MAX_PAGES_PER_WINDOW = 200;
@@ -24,9 +26,9 @@ const DEFAULT_MAX_RUN_MS = 30 * 60 * 1000;
 const RESUME_DELAY_MS = 60_000;
 
 type RangeKind = Exclude<SyncKind, "fit" | "zones" | SyncMarker>;
-type RangeSpec = { windowDays: number; emptyStop: number };
+type RangeSpec = { windowDays: number; emptyStop: number; overlapDays?: number };
 const RANGES: Record<RangeKind, RangeSpec> = {
-  activities: { windowDays: ACTIVITY_WINDOW_DAYS, emptyStop: 8 }, // two years without a single activity ends the backfill
+  activities: { windowDays: ACTIVITY_WINDOW_DAYS, emptyStop: 8, overlapDays: ACTIVITY_REFRESH_OVERLAP_DAYS }, // two years without a single activity ends the backfill
   dailies: { windowDays: 365, emptyStop: 2 },
   sleep: { windowDays: 31, emptyStop: 12 },
   hrv: { windowDays: 28, emptyStop: 12 },
@@ -105,7 +107,7 @@ export function createSyncWorker(deps: SyncDeps) {
 
     // 1) The newest data: from a few days before the last successful run, or the first window.
     const lastRun = state?.last_sync_at?.slice(0, 10);
-    const freshStart = lastRun ? addDays(lastRun, -REFRESH_OVERLAP_DAYS) : addDays(t, -(spec.windowDays - 1));
+    const freshStart = lastRun ? addDays(lastRun, -(spec.overlapDays ?? REFRESH_OVERLAP_DAYS)) : addDays(t, -(spec.windowDays - 1));
     // After a long pause the gap can exceed what one request allows, so it is fetched in window-sized chunks.
     let fresh = 0;
     for (let from = freshStart; from <= t; from = addDays(from, spec.windowDays)) {
@@ -149,6 +151,7 @@ export function createSyncWorker(deps: SyncDeps) {
         const known = repos.activities.has(userId, row.id);
         repos.activities.upsertSummary(userId, row);
         repos.activities.setMultisport(userId, row.id, mapMultisport(dto));
+        repos.activities.replaceExercises(userId, row.id, mapExercises(dto));
         if (!known) stored++;
       }
       if (batch.length < ACTIVITY_PAGE_SIZE) break;

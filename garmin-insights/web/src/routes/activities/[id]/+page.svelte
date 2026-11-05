@@ -16,7 +16,7 @@
   const detail = new Resource(() => unwrap<{ activity: ActivityFull; summary: Record<string, unknown>; legs: Leg[] }>(api.activities[":id"].$get({ param: { id } })));
   const samples = new Resource(() => unwrap<{ total: number; samples: import("$lib/types.ts").Sample[] }>(api.activities[":id"].samples.$get({ param: { id }, query: { max_points: "1500" } })));
   const laps = new Resource(() => unwrap<Lap[]>(api.activities[":id"].laps.$get({ param: { id } })));
-  const strength = new Resource(() => unwrap<{ sets: SetRow[]; byExercise: { exercise: string; sets: number; reps: number; volume_kg: number; max_weight_kg: number | null; best_e1rm_kg: number | null }[]; totalVolumeKg: number }>(api.activities[":id"].strength.$get({ param: { id } })));
+  const strength = new Resource(() => unwrap<{ sets: SetRow[]; byExercise: { exercise: string; sets: number; reps: number; volume_kg: number; max_weight_kg: number | null; best_e1rm_kg: number | null }[]; totalVolumeKg: number; source: "garmin_summary" | "fit" }>(api.activities[":id"].strength.$get({ param: { id } })));
   const analysis = new Resource(() => unwrap<{ zones: { hr: Zone; power: Zone; pace: Zone }; decoupling_pct: number | null; best_efforts: { distance: number; seconds: number; startT: number }[]; mean_max_power: { seconds: number; watts: number }[]; paddling?: Paddling }>(api.activities[":id"].analysis.$get({ param: { id } })));
 
   let assignError = $state<string | null>(null);
@@ -237,6 +237,7 @@
         {/each}</tbody>
       </table></div>
       <h3 style="margin-top:1rem">{m.strength_all_sets()}</h3>
+      {#if strength.data.source === "garmin_summary"}<p class="muted">{m.strength_sets_from_watch()}</p>{/if}
       <div class="table-scroll"><table>
         <thead><tr><th>#</th><th>{m.strength_exercise()}</th><th class="r">{m.strength_reps()}</th><th class="r">{m.strength_weight()}</th><th class="r">{m.metric_time()}</th></tr></thead>
         <tbody>{#each strength.data.sets as s (s.idx)}

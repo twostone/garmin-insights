@@ -3,7 +3,7 @@ import { downsample } from "../analytics/downsample.ts";
 import { legOverview, parentHr } from "../analytics/multisport.ts";
 import { activityAnalysis, parseSummary } from "../analytics/queries.ts";
 import { analysisSamples } from "../analytics/recompute.ts";
-import { strengthVolume } from "../analytics/strength.ts";
+import { strengthOfActivity } from "../analytics/queries.ts";
 import type { FitStore } from "../fit/store.ts";
 import { GarminKeyError } from "../garmin/client.ts";
 import { logger } from "../log.ts";
@@ -173,15 +173,15 @@ export function activityRoutes(deps: { repos: Repos; fit: FitStore; keys: KeySer
         method: "get",
         path: "/activities/{id}/strength",
         request: { params: idParam },
-        responses: { 200: json(z.object({ sets: z.array(setSchema), byExercise: z.array(exerciseSchema), totalVolumeKg: z.number() })), ...errors(404) },
+        responses: { 200: json(z.object({ sets: z.array(setSchema), byExercise: z.array(exerciseSchema), totalVolumeKg: z.number(), source: z.enum(["garmin_summary", "fit"]) })), ...errors(404) },
       }),
       (c) => {
         const user = userOf(c).id;
         const { id } = c.req.valid("param");
         if (!repos.activities.has(user, id)) return c.json({ error: "not_found" }, 404);
         const sets = repos.activities.sets(user, id);
-        const v = strengthVolume(sets);
-        return c.json({ sets, byExercise: v.byExercise, totalVolumeKg: v.totalVolumeKg }, 200);
+        const strength = strengthOfActivity(repos, user, id);
+        return c.json({ sets, byExercise: strength?.summary.byExercise ?? [], totalVolumeKg: strength?.summary.totalVolumeKg ?? 0, source: strength?.source ?? "fit" }, 200);
       },
     )
     .openapi(
