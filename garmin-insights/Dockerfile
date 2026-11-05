@@ -4,7 +4,7 @@
 # s6/bashio needed (the options are read from /data/options.json by the app itself), and Node >= 22.13
 # is guaranteed, which node:sqlite needs.
 
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -15,7 +15,7 @@ COPY src ./src
 COPY web ./web
 RUN npm run build
 
-FROM node:24-alpine
+FROM node:26-alpine
 WORKDIR /app
 
 COPY package.json package-lock.json ./
