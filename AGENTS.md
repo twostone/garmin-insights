@@ -95,7 +95,9 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
 - **Release Please** (`release.yml`) sammelt die Commits in einem Release-PR („chore(main): release x.y.z“), der
   `garmin-insights/config.yaml` (Zeile mit `# x-release-please-version`), `package.json`, `package-lock.json` und `CHANGELOG.md`
   ändert. Mergen des PR ist der Release (Tag `vX.Y.Z`, GitHub-Release, dann Tests und Image-Build). **Version, Tag und Changelog
-  nie von Hand ändern**, die Annotation in `config.yaml` nicht entfernen.
+  nie von Hand ändern**, die Annotation in `config.yaml` nicht entfernen. Release Please läuft mit dem Secret
+  `RELEASE_PLEASE_TOKEN` (fine-grained PAT nur für dieses Repo: Contents, Pull requests und Issues lesen/schreiben), damit der Release-PR die üblichen Checks bekommt
+  (mit dem `GITHUB_TOKEN` löst er keine Workflows aus).
 - **Gemeinsame Workflows:** `ci.yml`, `publish` und `lint-pr-title.yml` rufen die Workflows aus
   [twostone/hassio-workflows](https://github.com/twostone/hassio-workflows) auf (App-Linter, Hadolint, Tests, Docker-Build,
   `scripts/smoke.sh <image>`; Image-Push und danach `repository_dispatch` an
