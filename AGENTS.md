@@ -87,6 +87,19 @@ Vor jedem Commit: Tests, `tsc`, `check` und `build` müssen sauber durchlaufen (
   `gi-api` wüchse unbegrenzt). Die Umstellung (`withPwa`, Kit-Optionen in `vite.config.ts`, `magicast`) ist erprobt.
 - **TypeScript < 7** (svelte-check), `tsx` bleibt Runtime-Dependency (Container startet per `node --import tsx`).
 
+## Git und Pull Requests
+
+- **Neue Features und größere Änderungen kommen über einen Pull Request**, nicht direkt auf `main`: Branch `feat/<thema>` bzw.
+  `fix/<thema>`, ein PR pro Feature mit Backend, Migration, UI, Tests und angepasster Doku (`AGENTS.md`/`README.md`).
+  Kleine Doku-, CI- und Chore-Änderungen dürfen direkt auf `main`.
+- **Gestapelte PRs** (`gh stack`, Skill `gh-stack`) nur für Features, die aufeinander aufbauen: Jede Ebene ist ein
+  vollständiges Feature mit Tests und Doku und hat einen eigenen Conventional-Commit-Titel. Ein Feature nie in Ebenen
+  wie Migration, Backend und UI aufteilen.
+- **Der PR-Titel ist eine Conventional-Commit-Zeile** (`feat(bereich): …`, deutscher Text), weil er beim Squash-Merge zur
+  Commit-Nachricht wird und daraus Version und Changelog entstehen.
+- Die CI läuft auf dem PR und muss vor dem Merge grün sein. Kein Force-Push auf `main`.
+- Commit-Nachrichten: das „Warum“ zuerst, kurz, deutsch.
+
 ## CI und Releases
 
 - **Commits nach Conventional Commits:** `typ(bereich): Beschreibung`, deutscher Text. Nur `feat` (Minor), `fix` und `perf`
