@@ -56,6 +56,13 @@ export function staticFrontend(opts: StaticOptions) {
     if (c.get("access") === "ingress" && PWA_FILES.test(c.req.path)) return c.notFound();
     await next();
   });
-  app.use("/*", serveStatic({ root: relative(process.cwd(), opts.root) || ".", onFound: (_path, c) => c.header("X-Content-Type-Options", "nosniff") }));
+  const files = serveStatic({ root: relative(process.cwd(), opts.root) || "." });
+  app.use("/*", async (c, next) => {
+    const res = await files(c, next);
+    // serveStatic returns a Response only for a file it found. Its onFound hook runs after that Response is built,
+    // so a header set there never arrives; set it on the Response instead.
+    if (res instanceof Response) res.headers.set("X-Content-Type-Options", "nosniff");
+    return res;
+  });
   return app;
 }
