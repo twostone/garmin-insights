@@ -60,6 +60,12 @@ test("ingress: api needs a user, static files and context do not", async () => {
   assert.equal((await app.request("/app.js", {}, from(INGRESS_IP))).status, 200);
 });
 
+test("ingress: static files are sent with nosniff", async () => {
+  const res = await ingress().request("/app.js", {}, from(INGRESS_IP));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+});
+
 test("ingress: the context carries the MCP address only when the external listener is enabled", async () => {
   const withUrl = createIngressApp({ allowedIp: INGRESS_IP, mcpUrl: "https://app.example.test/mcp", api: testApi().api, staticRoot: staticRoot() });
   assert.equal((await (await withUrl.request("/api/context", {}, from(INGRESS_IP))).json()).mcpUrl, "https://app.example.test/mcp");
